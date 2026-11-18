@@ -1,0 +1,505 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum StandingOverride {
+  NONE
+  INC
+  DRP
+}
+
+enum AttendanceSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  EXCUSED
+}
+
+enum CheckInMethod {
+  QR_SCAN
+  TEACHER_OVERRIDE
+  SYSTEM_CLOSE
+}
+
+enum PointLedgerEntryType {
+  ATTENDANCE
+  ATTENDANCE_ADJUSTMENT
+  MERIT
+  DEMERIT
+  P2P_SEND
+  P2P_RECEIVE
+  REDEMPTION_ESCROW
+  REDEMPTION_REFUND
+  REDEMPTION_FINALIZE
+}
+
+enum MeritPresetType {
+  MERIT
+  DEMERIT
+}
+
+enum RewardType {
+  SCORE_BOOST
+  FIXED_PERK
+}
+
+enum RedemptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum GradeCategoryType {
+  ASSESSMENT
+  ATTENDANCE
+  POINTS_PARTICIPATION
+}
+
+enum AggregationMethod {
+  TOTAL_POINTS
+  EQUAL_AVERAGE
+}
+
+enum AssessmentScoreStatus {
+  PENDING
+  GRADED
+  MISSING
+  EXCUSED
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique
+  institutionalId String?    @unique
+  passwordHash    String
+  fullName        String
+  role            UserRole   @default(STUDENT)
+  status          UserStatus @default(ACTIVE)
+  sessionVersion  Int        @default(1)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  passwordResetTokens PasswordResetToken[]
+  createdInviteCodes  TeacherInviteCode[]  @relation("AdminCreatedInvites")
+  taughtSubjects      Subject[]            @relation("TeacherSubjects")
+  enrollments         SubjectEnrollment[]  @relation("StudentEnrollments")
+  auditLogs           AuditLog[]           @relation("AuditActor")
+  attendanceSessions  AttendanceSession[]  @relation("TeacherSessions")
+  attendanceOverrides AttendanceRecord[]   @relation("AttendanceOverrides")
+  ledgerEntries       PointLedgerEntry[]   @relation("LedgerActor")
+  reviewedRedemptions RedemptionRequest[]  @relation("RedemptionReviewer")
+  updatedScores       AssessmentScore[]    @relation("ScoreUpdatedBy")
+  pushSubscriptions   PushSubscription[]
+  notifications       Notification[]
+
+  @@index([role, status])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model TeacherInviteCode {
+  id               String    @id @default(uuid()) @db.Uuid
+  codeHash         String    @unique
+  label            String?
+  maxUses          Int       @default(1)
+  usedCount        Int       @default(0)
+  expiresAt        DateTime?
+  createdByAdminId String    @db.Uuid
+  createdAt        DateTime  @default(now())
+
+  createdByAdmin User @relation("AdminCreatedInvites", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([createdByAdminId])
+}
+
+model AcademicTerm {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subjects Subject[]
+}
+
+model Subject {
+  id                      String   @id @default(uuid()) @db.Uuid
+  teacherId               String   @db.Uuid
+  termId                  String   @db.Uuid
+  code                    String
+  title                   String
+  section                 String
+  startDate               DateTime?
+  endDate                 DateTime?
+  inviteCode              String   @unique
+  isArchived              Boolean  @default(false)
+  allowNegativeBalance    Boolean  @default(false)
+  allowP2pTransfers       Boolean  @default(true)
+  p2pMaxPerTransfer       Int?
+  p2pMaxPerDay            Int?
+  p2pMaxPerTerm           Int?
+  allowOpenRedemptions     Boolean  @default(false)
+  standingVisible          Boolean  @default(true)
+  requireGapFreeGradeScale Boolean  @default(true)
+  lateAttendanceCreditPct  Decimal  @default(50) @db.Decimal(5, 2)
+  termSplitConfig         Json?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  teacher            User                @relation("TeacherSubjects", fields: [teacherId], references: [id], onDelete: Restrict)
+  term               AcademicTerm        @relation(fields: [termId], references: [id], onDelete: Restrict)
+  enrollments        SubjectEnrollment[]
+  auditLogs          AuditLog[]
+  attendanceSessions AttendanceSession[]
+  ledgerEntries      PointLedgerEntry[]
+  meritPresets       MeritPreset[]
+  rewardItems        RewardItem[]
+  redemptionRequests RedemptionRequest[]
+  gradeCategories    GradeCategory[]
+  assessments        Assessment[]
+  gradeScaleRules    GradeScaleRule[]
+  notifications      Notification[]
+
+  @@index([teacherId, isArchived])
+  @@index([termId])
+}
+
+model SubjectEnrollment {
+  id                     String           @id @default(uuid()) @db.Uuid
+  subjectId              String           @db.Uuid
+  studentId              String           @db.Uuid
+  availableBalance       Int              @default(0)
+  escrowedBalance        Int              @default(0)
+  manualStandingOverride StandingOverride @default(NONE)
+  enrolledAt             DateTime         @default(now())
+
+  subject            Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  student            User                @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Cascade)
+  attendanceRecords  AttendanceRecord[]
+  ledgerEntries      PointLedgerEntry[]
+  redemptionRequests RedemptionRequest[]
+  assessmentScores   AssessmentScore[]
+
+  @@unique([subjectId, studentId])
+  @@index([studentId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @db.Uuid
+  subjectId   String?  @db.Uuid
+  action      String
+  targetType  String
+  targetId    String
+  beforeState Json?
+  afterState  Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  actor   User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([subjectId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+}
+
+model AttendanceSession {
+  id                String                  @id @default(uuid()) @db.Uuid
+  subjectId         String                  @db.Uuid
+  teacherId         String                  @db.Uuid
+  status            AttendanceSessionStatus @default(OPEN)
+  teacherLat        Decimal                 @db.Decimal(9, 6)
+  teacherLng        Decimal                 @db.Decimal(9, 6)
+  teacherAccuracyM  Float
+  radiusMeters      Int                     @default(50)
+  qrSecret          String
+  qrRotationSeconds Int                     @default(12)
+  startedAt         DateTime                @default(now())
+  presentCutoffAt   DateTime
+  lateCutoffAt      DateTime
+  closedAt          DateTime?
+  presentPoints     Int                     @default(10)
+  latePoints        Int                     @default(5)
+
+  subject Subject            @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher User               @relation("TeacherSessions", fields: [teacherId], references: [id], onDelete: Restrict)
+  records AttendanceRecord[]
+
+  @@index([subjectId, status])
+  @@index([subjectId, startedAt])
+}
+
+model AttendanceRecord {
+  id                    String           @id @default(uuid()) @db.Uuid
+  sessionId             String           @db.Uuid
+  enrollmentId          String           @db.Uuid
+  status                AttendanceStatus
+  checkInMethod         CheckInMethod
+  studentLat            Decimal?         @db.Decimal(9, 6)
+  studentLng            Decimal?         @db.Decimal(9, 6)
+  studentAccuracyM      Float?
+  distanceMeters        Float?
+  deviceHash            String?
+  pointsAwarded         Int              @default(0)
+  overriddenByTeacherId String?          @db.Uuid
+  overrideReason        String?
+  recordedAt            DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  session             AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  enrollment          SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  overriddenByTeacher User?             @relation("AttendanceOverrides", fields: [overriddenByTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, enrollmentId])
+  @@unique([sessionId, deviceHash])
+  @@index([enrollmentId, recordedAt])
+}
+
+model PointLedgerEntry {
+  id             String               @id @default(uuid()) @db.Uuid
+  enrollmentId   String               @db.Uuid
+  subjectId      String               @db.Uuid
+  entryType      PointLedgerEntryType
+  availableDelta Int
+  escrowDelta    Int                  @default(0)
+  availableAfter Int
+  escrowAfter    Int
+  referenceType  String
+  referenceId    String               @db.Uuid
+  note           String?
+  actorUserId    String?              @db.Uuid
+  createdAt      DateTime             @default(now())
+
+  enrollment SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  subject    Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  actor      User?             @relation("LedgerActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([enrollmentId, createdAt])
+  @@index([subjectId, createdAt])
+}
+
+model MeritPreset {
+  id          String          @id @default(uuid()) @db.Uuid
+  subjectId   String          @db.Uuid
+  name        String
+  type        MeritPresetType
+  pointsDelta Int
+  description String?
+  isArchived  Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, isArchived])
+}
+
+model RewardItem {
+  id                    String     @id @default(uuid()) @db.Uuid
+  subjectId             String     @db.Uuid
+  name                  String
+  description           String?
+  rewardType            RewardType
+  pointCostPerUnit      Int
+  scoreValuePerUnit     Decimal    @default(1) @db.Decimal(6, 2)
+  eligibleCategoryIds   String[]   @default([]) @db.Uuid
+  allowExtraCredit      Boolean    @default(false)
+  maxBoostPerAssessment Decimal?   @db.Decimal(6, 2)
+  isActive              Boolean    @default(true)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  subject     Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  redemptions RedemptionRequest[]
+
+  @@index([subjectId, isActive])
+}
+
+model RedemptionRequest {
+  id                  String           @id @default(uuid()) @db.Uuid
+  subjectId           String           @db.Uuid
+  enrollmentId        String           @db.Uuid
+  rewardItemId        String?          @db.Uuid
+  isCustomRequest     Boolean          @default(false)
+  targetAssessmentId  String?          @db.Uuid
+  targetLabel         String?
+  pointsEscrowed      Int
+  requestedUnits      Int              @default(1)
+  projectedScoreBoost Decimal?         @db.Decimal(6, 2)
+  studentNote         String?
+  status              RedemptionStatus @default(PENDING)
+  reviewedByTeacherId String?          @db.Uuid
+  teacherNote         String?
+  reviewedAt          DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  subject           Subject           @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  enrollment        SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  rewardItem        RewardItem?       @relation(fields: [rewardItemId], references: [id], onDelete: SetNull)
+  targetAssessment  Assessment?       @relation(fields: [targetAssessmentId], references: [id], onDelete: SetNull)
+  reviewedByTeacher User?             @relation("RedemptionReviewer", fields: [reviewedByTeacherId], references: [id], onDelete: SetNull)
+
+  @@index([subjectId, status, createdAt])
+  @@index([enrollmentId, createdAt])
+  @@index([targetAssessmentId])
+}
+
+model GradeCategory {
+  id                String            @id @default(uuid()) @db.Uuid
+  subjectId         String            @db.Uuid
+  termKey           String            @default("DEFAULT")
+  name              String
+  categoryType      GradeCategoryType
+  weightPct         Decimal           @db.Decimal(5, 2)
+  aggregationMethod AggregationMethod @default(TOTAL_POINTS)
+  targetPointsCap   Int?
+  sortOrder         Int               @default(0)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  subject     Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  assessments Assessment[]
+
+  @@index([subjectId, termKey, sortOrder])
+}
+
+model Assessment {
+  id             String    @id @default(uuid()) @db.Uuid
+  subjectId      String    @db.Uuid
+  categoryId     String    @db.Uuid
+  title          String
+  description    String?
+  maxScore       Decimal   @db.Decimal(8, 2)
+  assessmentDate DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  subject           Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  category          GradeCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  scores            AssessmentScore[]
+  redemptionTargets RedemptionRequest[]
+
+  @@index([subjectId, categoryId])
+  @@index([subjectId, assessmentDate])
+}
+
+model AssessmentScore {
+  id                 String                @id @default(uuid()) @db.Uuid
+  assessmentId       String                @db.Uuid
+  enrollmentId       String                @db.Uuid
+  status             AssessmentScoreStatus @default(PENDING)
+  rawScore           Decimal?              @db.Decimal(8, 2)
+  bonusPoints        Decimal               @default(0) @db.Decimal(8, 2)
+  allowExtraCredit   Boolean               @default(false)
+  remarks            String?
+  updatedByTeacherId String?               @db.Uuid
+  updatedAt          DateTime              @updatedAt
+
+  assessment       Assessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  enrollment       SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  updatedByTeacher User?             @relation("ScoreUpdatedBy", fields: [updatedByTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([assessmentId, enrollmentId])
+  @@index([enrollmentId])
+}
+
+model GradeScaleRule {
+  id              String  @id @default(uuid()) @db.Uuid
+  subjectId       String  @db.Uuid
+  minPct          Decimal @db.Decimal(6, 2)
+  maxPct          Decimal @db.Decimal(6, 2)
+  gradeEquivalent String
+  label           String
+  isPassing       Boolean @default(true)
+  sortOrder       Int     @default(0)
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, sortOrder])
+}
+
+enum NotificationType {
+  ATTENDANCE_CHECKIN
+  ATTENDANCE_OVERRIDE
+  MERIT_RECEIVED
+  DEMERIT_RECEIVED
+  P2P_RECEIVED
+  REDEMPTION_SUBMITTED
+  REDEMPTION_APPROVED
+  REDEMPTION_REJECTED
+  ASSESSMENT_POSTED
+  SCORE_UPDATED
+  STUDENT_JOINED
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  subjectId String?          @db.Uuid
+  type      NotificationType
+  title     String
+  body      String
+  linkUrl   String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
