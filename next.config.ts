@@ -10,7 +10,7 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ["@node-rs/argon2", "web-push"],
+  serverExternalPackages: ["@node-rs/argon2", "web-push", "exceljs"],
 };
 
 export default withSerwist(nextConfig);

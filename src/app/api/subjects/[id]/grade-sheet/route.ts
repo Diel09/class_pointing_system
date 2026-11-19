@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
 import {
+  buildClassGradeSheetWorkbook,
   buildGradeSheetFilename,
-  formatClassGradeSheetCsv,
-  formatStudentGradeSheetCsv,
-} from "@/lib/grading/grade-sheet-csv";
+  buildStudentGradeSheetWorkbook,
+} from "@/lib/grading/grade-sheet-xlsx";
 import { buildSubjectGradeSheetData } from "@/lib/grading/grade-sheet-service";
 
 const uuidSchema = z.string().uuid();
@@ -41,7 +41,7 @@ export async function GET(
     );
   }
 
-  let csv: string;
+  let workbookBytes: Uint8Array;
   let filename: string;
 
   if (enrollmentIdParam) {
@@ -53,17 +53,18 @@ export async function GET(
         "ERR_ENROLLMENT_NOT_FOUND"
       );
     }
-    csv = formatStudentGradeSheetCsv(data, targetStudent);
+    workbookBytes = await buildStudentGradeSheetWorkbook(data, targetStudent);
     filename = buildGradeSheetFilename(data, targetStudent);
   } else {
-    csv = formatClassGradeSheetCsv(data);
+    workbookBytes = await buildClassGradeSheetWorkbook(data);
     filename = buildGradeSheetFilename(data);
   }
 
-  return new NextResponse(csv, {
+  return new NextResponse(Buffer.from(workbookBytes), {
     status: 200,
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
       "Cache-Control": "no-store",
     },

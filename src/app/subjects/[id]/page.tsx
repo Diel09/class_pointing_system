@@ -16,9 +16,14 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import { useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { StudentAttendancePanel } from "@/components/attendance/student-attendance-panel";
 import { TeacherAttendancePanel } from "@/components/attendance/teacher-attendance-panel";
 import { StudentAssessmentsPanel } from "@/components/grading/student-assessments-panel";
@@ -40,7 +45,15 @@ import {
   UnenrollStudentModal,
   type UnenrollStudentTarget,
 } from "@/components/subjects/unenroll-student-modal";
-import { cn, formatSubjectDateRange } from "@/lib/utils";
+import {
+  ALL_SUBJECT_TAB_KEYS,
+  resolveSubjectTab,
+  STUDENT_SUBJECT_TABS,
+  SubjectWorkspaceTabs,
+  TEACHER_SUBJECT_TABS,
+  type SubjectTabKey,
+} from "@/components/subjects/subject-workspace-tabs";
+import { formatSubjectDateRange } from "@/lib/utils";
 
 interface SubjectDetailResponse {
   subject: {
@@ -92,9 +105,14 @@ interface ImportResult {
   notFound: string[];
 }
 
-export default function SubjectDetailPage() {
+const STUDENT_TAB_KEYS = STUDENT_SUBJECT_TABS.map((tab) => tab.key);
+const TEACHER_TAB_KEYS = TEACHER_SUBJECT_TABS.map((tab) => tab.key);
+
+function SubjectDetailContent() {
   const params = useParams<{ id: string }>();
+  const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const subjectId = params.id;
   const queryClient = useQueryClient();
 
@@ -114,9 +132,31 @@ export default function SubjectDetailPage() {
   const [unenrollTargets, setUnenrollTargets] = useState<
     UnenrollStudentTarget[]
   >([]);
-  const [activeTab, setActiveTab] = useState<
-    "grades" | "attendance" | "points" | "roster"
-  >("grades");
+  const tabQueryValue = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<SubjectTabKey>(() =>
+    resolveSubjectTab(tabQueryValue, ALL_SUBJECT_TAB_KEYS)
+  );
+
+  useEffect(() => {
+    setActiveTab(resolveSubjectTab(tabQueryValue, ALL_SUBJECT_TAB_KEYS));
+  }, [tabQueryValue]);
+
+  function handleTabChange(nextTab: SubjectTabKey) {
+    setActiveTab(nextTab);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (nextTab === "grades") {
+      nextParams.delete("tab");
+    } else {
+      nextParams.set("tab", nextTab);
+    }
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, {
+      scroll: false,
+    });
+  }
+
+  const studentActiveTab = resolveSubjectTab(activeTab, STUDENT_TAB_KEYS);
+  const teacherActiveTab = resolveSubjectTab(activeTab, TEACHER_TAB_KEYS);
 
   const { data: user } = useQuery<CurrentUserDto | null>({
     queryKey: ["auth", "me"],
@@ -357,41 +397,21 @@ export default function SubjectDetailPage() {
               <>
                 <StudentStandingPanel subjectId={subjectId} />
 
-                <div
-                  role="tablist"
-                  aria-label="Student subject sections"
-                  className="flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm"
-                >
-                  {(
-                    [
-                      { key: "grades", label: "Assessments & Standing" },
-                      { key: "points", label: "Points & Rewards" },
-                      { key: "attendance", label: "Attendance" },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={activeTab === tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      className={cn(
-                        "flex-1 min-w-[130px] rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap",
-                        activeTab === tab.key
-                          ? "bg-indigo-600 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                <SubjectWorkspaceTabs
+                  ariaLabel="Student subject sections"
+                  tabs={STUDENT_SUBJECT_TABS}
+                  activeTab={studentActiveTab}
+                  onTabChange={handleTabChange}
+                />
 
-                {activeTab === "grades" && (
-                  <StudentAssessmentsPanel subjectId={subjectId} />
+                {studentActiveTab === "grades" && (
+                  <StudentAssessmentsPanel
+                    subjectId={subjectId}
+                    isArchived={subjectData.subject.isArchived}
+                  />
                 )}
 
-                {activeTab === "points" && (
+                {studentActiveTab === "points" && (
                   <div className="space-y-6">
                     <StudentWalletPanel
                       subjectId={subjectId}
@@ -426,7 +446,7 @@ export default function SubjectDetailPage() {
                   </div>
                 )}
 
-                {activeTab === "attendance" && (
+                {studentActiveTab === "attendance" && (
                   <StudentAttendancePanel subjectId={subjectId} />
                 )}
               </>
@@ -435,52 +455,28 @@ export default function SubjectDetailPage() {
             {/* Teacher Workspace */}
             {isTeacherOwner && (
               <>
-                <div
-                  role="tablist"
-                  aria-label="Teacher subject sections"
-                  className="flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm"
-                >
-                  {(
-                    [
-                      { key: "grades", label: "Standing & Gradebook" },
-                      { key: "attendance", label: "Attendance" },
-                      { key: "points", label: "Points & Economy" },
-                      { key: "roster", label: "Roster & Computation" },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      role="tab"
-                      aria-selected={activeTab === tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      className={cn(
-                        "flex-1 min-w-[140px] rounded-xl px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap",
-                        activeTab === tab.key
-                          ? "bg-indigo-600 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                <SubjectWorkspaceTabs
+                  ariaLabel="Teacher subject sections"
+                  tabs={TEACHER_SUBJECT_TABS}
+                  activeTab={teacherActiveTab}
+                  onTabChange={handleTabChange}
+                />
 
-                {activeTab === "grades" && (
+                {teacherActiveTab === "grades" && (
                   <TeacherAssessmentsPanel
                     subjectId={subjectId}
                     isArchived={subjectData.subject.isArchived}
                   />
                 )}
 
-                {activeTab === "attendance" && (
+                {teacherActiveTab === "attendance" && (
                   <TeacherAttendancePanel
                     subjectId={subjectId}
                     isArchived={subjectData.subject.isArchived}
                   />
                 )}
 
-                {activeTab === "points" && (
+                {teacherActiveTab === "points" && (
                   <div className="space-y-6">
                     <TeacherMeritsPanel
                       subjectId={subjectId}
@@ -505,7 +501,7 @@ export default function SubjectDetailPage() {
                   </div>
                 )}
 
-                {activeTab === "roster" && (
+                {teacherActiveTab === "roster" && (
                   <div className="space-y-6">
                     <TeacherComputationPanel
                       subjectId={subjectId}
@@ -859,5 +855,21 @@ export default function SubjectDetailPage() {
         }}
       />
     </AppShell>
+  );
+}
+
+export default function SubjectDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <div className="rounded-2xl bg-white border border-slate-200 p-8 text-center text-sm text-slate-500">
+            Loading subject workspace...
+          </div>
+        </AppShell>
+      }
+    >
+      <SubjectDetailContent />
+    </Suspense>
   );
 }

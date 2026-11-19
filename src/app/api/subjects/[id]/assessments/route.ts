@@ -67,6 +67,46 @@ export async function GET(
       ? undefined
       : await db.subjectEnrollment.count({ where: { subjectId: id } });
 
+  const pendingBoostByAssessment = new Map<
+    string,
+    { count: number; totalBoost: number; totalPointsEscrowed: number }
+  >();
+
+  if (
+    user.role === "STUDENT" &&
+    enrollment &&
+    typeof db.redemptionRequest?.findMany === "function"
+  ) {
+    const pendingBoosts = await db.redemptionRequest.findMany({
+      where: {
+        subjectId: id,
+        enrollmentId: enrollment.id,
+        status: "PENDING",
+        targetAssessmentId: { not: null },
+        projectedScoreBoost: { not: null },
+      },
+      select: {
+        targetAssessmentId: true,
+        projectedScoreBoost: true,
+        pointsEscrowed: true,
+      },
+    });
+
+    for (const req of pendingBoosts) {
+      if (!req.targetAssessmentId || req.projectedScoreBoost === null) continue;
+      const prev = pendingBoostByAssessment.get(req.targetAssessmentId) ?? {
+        count: 0,
+        totalBoost: 0,
+        totalPointsEscrowed: 0,
+      };
+      pendingBoostByAssessment.set(req.targetAssessmentId, {
+        count: prev.count + 1,
+        totalBoost: round2(prev.totalBoost + Number(req.projectedScoreBoost)),
+        totalPointsEscrowed: prev.totalPointsEscrowed + req.pointsEscrowed,
+      });
+    }
+  }
+
   return NextResponse.json({
     assessments: assessments.map((a) => {
       const maxScore = Number(a.maxScore);
@@ -88,6 +128,11 @@ export async function GET(
             : null;
         const bonusPoints = s ? Number(s.bonusPoints) : 0;
         const allowExtraCredit = s?.allowExtraCredit ?? false;
+        const pendingBoost = pendingBoostByAssessment.get(a.id) ?? {
+          count: 0,
+          totalBoost: 0,
+          totalPointsEscrowed: 0,
+        };
 
         return {
           id: a.id,
@@ -99,6 +144,7 @@ export async function GET(
           maxScore,
           assessmentDate: a.assessmentDate,
           createdAt: a.createdAt,
+          pendingBoost,
           myScore: {
             status,
             rawScore,

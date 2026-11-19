@@ -2,20 +2,21 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRight,
   Award,
+  Check,
   ClipboardList,
   Download,
-  Edit3,
-  FileSpreadsheet,
+  Pencil,
   Plus,
-  Save,
-  Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { ComputeStandingResult } from "@/lib/grading/computeStanding";
+import { type ComputeStandingResult } from "@/lib/grading/computeStanding";
+import { DEFAULT_SINGLE_TERM_CATEGORIES } from "@/lib/grading/default-scale";
 import { cn } from "@/lib/utils";
-import { parseCsvScores } from "@/lib/validations/grading";
 
 interface GradeCategoryItem {
   id: string;
@@ -43,29 +44,6 @@ interface TeacherAssessmentDto {
     pendingCount: number;
     totalStudents: number;
   };
-}
-
-interface ScoreGridRow {
-  enrollmentId: string;
-  manualStandingOverride: "NONE" | "INC" | "DRP";
-  student: {
-    id: string;
-    fullName: string;
-    email: string;
-    institutionalId: string | null;
-  };
-  status: "PENDING" | "GRADED" | "MISSING" | "EXCUSED";
-  rawScore: number | null;
-  bonusPoints: number;
-  allowExtraCredit: boolean;
-  effectiveScore: number | null;
-  remarks: string | null;
-}
-
-interface ScoreDraft {
-  status: "PENDING" | "GRADED" | "MISSING" | "EXCUSED";
-  rawScore: string;
-  remarks: string;
 }
 
 interface ClassStandingRow {
@@ -98,18 +76,21 @@ export function TeacherAssessmentsPanel({
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-
-  const [selectedAssessmentId, setSelectedAssessmentId] = useState<
+  const [initializingCategories, setInitializingCategories] = useState(false);
+  const [highlightedAssessmentId, setHighlightedAssessmentId] = useState<
     string | null
   >(null);
-  const [drafts, setDrafts] = useState<Record<string, ScoreDraft>>({});
-  const [savingScores, setSavingScores] = useState(false);
-  const [scoreMessage, setScoreMessage] = useState<string | null>(null);
-  const [scoreError, setScoreError] = useState<string | null>(null);
 
-  const [showCsvImport, setShowCsvImport] = useState(false);
-  const [csvText, setCsvText] = useState("");
-  const [csvSummary, setCsvSummary] = useState<string | null>(null);
+  const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(
+    null
+  );
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editMaxScore, setEditMaxScore] = useState(50);
+  const [editAssessmentDate, setEditAssessmentDate] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [downloadingTarget, setDownloadingTarget] = useState<
     "class" | string | null
@@ -138,24 +119,6 @@ export function TeacherAssessmentsPanel({
       if (!res.ok) throw new Error("Unable to load assessments.");
       return (await res.json()) as { assessments: TeacherAssessmentDto[] };
     },
-  });
-
-  const { data: scoresData, isLoading: loadingGrid } = useQuery<{
-    assessment: TeacherAssessmentDto;
-    rows: ScoreGridRow[];
-  }>({
-    queryKey: ["assessment-scores", selectedAssessmentId],
-    queryFn: async () => {
-      const res = await fetch(`/api/assessments/${selectedAssessmentId}/scores`, {
-        credentials: "same-origin",
-      });
-      if (!res.ok) throw new Error("Unable to load score grid.");
-      return (await res.json()) as {
-        assessment: TeacherAssessmentDto;
-        rows: ScoreGridRow[];
-      };
-    },
-    enabled: Boolean(selectedAssessmentId),
   });
 
   const { data: classStandingsData } = useQuery<{
@@ -191,26 +154,99 @@ export function TeacherAssessmentsPanel({
     }
   }, [assessmentCategories, categoryId]);
 
-  useEffect(() => {
-    if (!selectedAssessmentId && assessments.length > 0) {
-      setSelectedAssessmentId(assessments[0]!.id);
+  async function handleInitDefaultCategories() {
+    setInitializingCategories(true);
+    setCreateError(null);
+    try {
+      const res = await fetch(`/api/subjects/${subjectId}/computation`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lateAttendanceCreditPct: 50,
+          termSplitConfig: null,
+          categories: DEFAULT_SINGLE_TERM_CATEGORIES,
+        }),
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error?: string };
+        setCreateError(err.error ?? "Unable to initialize categories.");
+        return;
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["subject-computation", subjectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["subject-assessments", subjectId],
+        }),
+      ]);
+    } catch {
+      setCreateError("Network error while initializing categories.");
+    } finally {
+      setInitializingCategories(false);
     }
-  }, [assessments, selectedAssessmentId]);
+  }
 
-  useEffect(() => {
-    if (!scoresData?.rows) return;
-    const next: Record<string, ScoreDraft> = {};
-    for (const row of scoresData.rows) {
-      next[row.enrollmentId] = {
-        status: row.status,
-        rawScore: row.rawScore !== null ? String(row.rawScore) : "",
-        remarks: row.remarks ?? "",
-      };
+  function startEditAssessment(assessment: TeacherAssessmentDto) {
+    setEditingAssessmentId(assessment.id);
+    setEditTitle(assessment.title);
+    setEditCategoryId(assessment.categoryId);
+    setEditMaxScore(assessment.maxScore);
+    setEditAssessmentDate(
+      assessment.assessmentDate
+        ? assessment.assessmentDate.slice(0, 10)
+        : ""
+    );
+    setEditDescription(assessment.description ?? "");
+    setEditError(null);
+  }
+
+  async function handleSaveEditAssessment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingAssessmentId) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/assessments/${editingAssessmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          categoryId: editCategoryId,
+          title: editTitle.trim(),
+          maxScore: Number(editMaxScore),
+          description: editDescription.trim() || null,
+          assessmentDate: editAssessmentDate
+            ? new Date(`${editAssessmentDate}T00:00:00.000Z`).toISOString()
+            : null,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setEditError(data.error ?? "Unable to update assessment.");
+        return;
+      }
+      const updatedId = editingAssessmentId;
+      setEditingAssessmentId(null);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["subject-assessments", subjectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["assessment-scores", updatedId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["subject-standing", subjectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["subject-computation", subjectId],
+        }),
+      ]);
+    } catch {
+      setEditError("Network error while updating assessment.");
+    } finally {
+      setSavingEdit(false);
     }
-    setDrafts(next);
-    setScoreMessage(null);
-    setScoreError(null);
-  }, [scoresData]);
+  }
 
   async function handleCreateAssessment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -243,7 +279,7 @@ export function TeacherAssessmentsPanel({
       setDescription("");
       setAssessmentDate("");
       setShowCreateForm(false);
-      setSelectedAssessmentId(data.assessment.id);
+      setHighlightedAssessmentId(data.assessment.id);
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["subject-assessments", subjectId],
@@ -264,8 +300,11 @@ export function TeacherAssessmentsPanel({
       method: "DELETE",
     });
     if (res.ok) {
-      if (selectedAssessmentId === assessmentId) {
-        setSelectedAssessmentId(null);
+      if (highlightedAssessmentId === assessmentId) {
+        setHighlightedAssessmentId(null);
+      }
+      if (editingAssessmentId === assessmentId) {
+        setEditingAssessmentId(null);
       }
       await Promise.all([
         queryClient.invalidateQueries({
@@ -279,112 +318,6 @@ export function TeacherAssessmentsPanel({
         }),
       ]);
     }
-  }
-
-  async function handleSaveScores() {
-    if (!selectedAssessmentId || !scoresData) return;
-    setSavingScores(true);
-    setScoreError(null);
-    setScoreMessage(null);
-
-    try {
-      const payloadScores = scoresData.rows.map((row) => {
-        const draft = drafts[row.enrollmentId] ?? {
-          status: row.status,
-          rawScore: row.rawScore !== null ? String(row.rawScore) : "",
-          remarks: row.remarks ?? "",
-        };
-        const parsedRaw =
-          draft.status === "GRADED"
-            ? Number.parseFloat(draft.rawScore)
-            : null;
-        return {
-          enrollmentId: row.enrollmentId,
-          status: draft.status,
-          rawScore:
-            draft.status === "GRADED" && Number.isFinite(parsedRaw)
-              ? parsedRaw
-              : null,
-          remarks: draft.remarks.trim() || null,
-        };
-      });
-
-      const res = await fetch(
-        `/api/assessments/${selectedAssessmentId}/scores`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scores: payloadScores }),
-        }
-      );
-      const data = (await res.json()) as {
-        error?: string;
-        updatedCount?: number;
-      };
-      if (!res.ok) {
-        setScoreError(data.error ?? "Failed to save scores.");
-        return;
-      }
-
-      setScoreMessage(`Saved ${data.updatedCount ?? 0} student score(s).`);
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["assessment-scores", selectedAssessmentId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["subject-assessments", subjectId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["subject-standing", subjectId],
-        }),
-      ]);
-    } catch {
-      setScoreError("Network error while saving scores.");
-    } finally {
-      setSavingScores(false);
-    }
-  }
-
-  function handleApplyCsv() {
-    if (!scoresData) return;
-    const { rows, errors } = parseCsvScores(csvText);
-    const byIdentifier = new Map<string, string>();
-    for (const r of scoresData.rows) {
-      byIdentifier.set(r.student.email.toLowerCase(), r.enrollmentId);
-      if (r.student.institutionalId) {
-        byIdentifier.set(
-          r.student.institutionalId.toUpperCase(),
-          r.enrollmentId
-        );
-      }
-    }
-
-    let matched = 0;
-    const unmatched: string[] = [];
-    setDrafts((prev) => {
-      const next = { ...prev };
-      for (const row of rows) {
-        const enrollId =
-          byIdentifier.get(row.identifier.toLowerCase()) ??
-          byIdentifier.get(row.identifier.toUpperCase());
-        if (!enrollId) {
-          unmatched.push(row.identifier);
-          continue;
-        }
-        matched += 1;
-        next[enrollId] = {
-          status: row.status,
-          rawScore: row.rawScore !== null ? String(row.rawScore) : "",
-          remarks: row.remarks ?? prev[enrollId]?.remarks ?? "",
-        };
-      }
-      return next;
-    });
-
-    const parts = [`Applied ${matched} row(s) to grid (click Save Scores to commit).`];
-    if (unmatched.length > 0) parts.push(`Unmatched: ${unmatched.join(", ")}`);
-    if (errors.length > 0) parts.push(`Parse errors: ${errors.join("; ")}`);
-    setCsvSummary(parts.join(" "));
   }
 
   async function handleOverrideChange(
@@ -435,7 +368,7 @@ export function TeacherAssessmentsPanel({
       const filenameMatch = /filename="([^"]+)"/i.exec(disposition);
       const filename =
         filenameMatch?.[1] ??
-        (enrollmentId ? "student-grade-sheet.csv" : "class-grade-sheet.csv");
+        (enrollmentId ? "student-grade-sheet.xlsx" : "class-grade-sheet.xlsx");
 
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -455,33 +388,51 @@ export function TeacherAssessmentsPanel({
 
   return (
     <section className="space-y-6">
-      {/* Assessments List + Score Grid */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Left: Assessments List & Creation */}
-        <div className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-indigo-600" />
+      {/* Assessments List & Creation */}
+      <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-indigo-600" />
+            <div>
               <h3 className="text-sm font-bold text-slate-900">
                 Assessments ({assessments.length})
               </h3>
+              <p className="text-[11px] text-slate-500">
+                Create and manage assessments, then open each assessment to grade students.
+              </p>
             </div>
-            <button
-              type="button"
-              disabled={isArchived || assessmentCategories.length === 0}
-              onClick={() => setShowCreateForm((prev) => !prev)}
-              className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>{showCreateForm ? "Close" : "New Assessment"}</span>
-            </button>
           </div>
+          <button
+            type="button"
+            disabled={isArchived || assessmentCategories.length === 0}
+            onClick={() => setShowCreateForm((prev) => !prev)}
+            className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>{showCreateForm ? "Close" : "New Assessment"}</span>
+          </button>
+        </div>
 
           {assessmentCategories.length === 0 && (
-            <p className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-              Save at least one Assessment-type category in Computation Setup
-              before creating assessments.
-            </p>
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 space-y-2">
+              <p>
+                Save at least one Assessment-type category in Computation Setup
+                before creating assessments.
+              </p>
+              <button
+                type="button"
+                disabled={isArchived || initializingCategories}
+                onClick={() => void handleInitDefaultCategories()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-800 disabled:opacity-50"
+              >
+                <Plus className="h-3 w-3" />
+                <span>
+                  {initializingCategories
+                    ? "Loading..."
+                    : "Load Default Categories (20/20/50/10)"}
+                </span>
+              </button>
+            </div>
           )}
 
           {showCreateForm && (
@@ -604,272 +555,169 @@ export function TeacherAssessmentsPanel({
               No assessments yet. Click &ldquo;New Assessment&rdquo; to add one.
             </p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {assessments.map((a) => {
-                const selected = selectedAssessmentId === a.id;
+                const isHighlighted = highlightedAssessmentId === a.id;
+                const isEditing = editingAssessmentId === a.id;
                 return (
                   <div
                     key={a.id}
                     className={cn(
-                      "rounded-xl border p-3 flex items-start justify-between gap-2 transition-colors",
-                      selected
-                        ? "border-indigo-600 bg-indigo-50/50"
+                      "rounded-xl border p-3.5 space-y-2 transition-colors",
+                      isHighlighted
+                        ? "border-indigo-600 bg-indigo-50/40"
                         : "border-slate-200 bg-white"
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setSelectedAssessmentId(a.id)}
-                      className="text-left flex-1 min-w-0 space-y-0.5"
-                    >
-                      <p className="text-xs font-bold text-slate-900 truncate">
-                        {a.title}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        {a.category.name} • Max {a.maxScore}
-                      </p>
-                      {a.scoreSummary && (
-                        <p className="text-[10px] text-slate-500">
-                          {a.scoreSummary.gradedCount} graded •{" "}
-                          {a.scoreSummary.pendingCount} pending •{" "}
-                          {a.scoreSummary.missingCount} missing
-                        </p>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isArchived}
-                      onClick={() => void handleDeleteAssessment(a.id)}
-                      aria-label={`Delete ${a.title}`}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {isEditing ? (
+                      <form
+                        onSubmit={handleSaveEditAssessment}
+                        className="space-y-2.5"
+                      >
+                        <input
+                          type="text"
+                          required
+                          aria-label="Edit assessment title"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <select
+                            aria-label="Edit assessment category"
+                            value={editCategoryId}
+                            onChange={(e) => setEditCategoryId(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                          >
+                            {assessmentCategories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0.5"
+                            required
+                            aria-label="Edit assessment max score"
+                            value={editMaxScore}
+                            onChange={(e) =>
+                              setEditMaxScore(
+                                Number.parseFloat(e.target.value) || 1
+                              )
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            aria-label="Edit assessment date"
+                            value={editAssessmentDate}
+                            onChange={(e) =>
+                              setEditAssessmentDate(e.target.value)
+                            }
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                          />
+                          <input
+                            type="text"
+                            maxLength={1000}
+                            placeholder="Notes (optional)"
+                            aria-label="Edit assessment notes"
+                            value={editDescription}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                          />
+                        </div>
+                        {editError && (
+                          <p className="text-[11px] text-rose-700">
+                            {editError}
+                          </p>
+                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditingAssessmentId(null)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            <X className="h-3 w-3" />
+                            <span>Cancel</span>
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingEdit}
+                            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            <Check className="h-3 w-3" />
+                            <span>{savingEdit ? "Saving..." : "Save"}</span>
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <p className="text-sm font-bold text-slate-900 truncate">
+                            {a.title}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {a.category.name}
+                            {a.category.termKey !== "DEFAULT"
+                              ? ` (${a.category.termKey})`
+                              : ""}{" "}
+                            • Max {a.maxScore}
+                            {a.assessmentDate
+                              ? ` • ${a.assessmentDate.slice(0, 10)}`
+                              : ""}
+                          </p>
+                          {a.description && (
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {a.description}
+                            </p>
+                          )}
+                          {a.scoreSummary && (
+                            <p className="text-[11px] text-slate-500">
+                              {a.scoreSummary.gradedCount} graded •{" "}
+                              {a.scoreSummary.pendingCount} pending •{" "}
+                              {a.scoreSummary.missingCount} missing
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Link
+                            href={`/subjects/${subjectId}/assessments/${a.id}`}
+                            aria-label={`Grade students for ${a.title}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                          >
+                            <span>Grade Students</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                          <button
+                            type="button"
+                            disabled={isArchived}
+                            onClick={() => startEditAssessment(a)}
+                            aria-label={`Edit ${a.title}`}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isArchived}
+                            onClick={() => void handleDeleteAssessment(a.id)}
+                            aria-label={`Delete ${a.title}`}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
-
-        {/* Right: Class Score Grid */}
-        <div className="lg:col-span-3 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Edit3 className="h-4 w-4 text-indigo-600" />
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  {scoresData?.assessment
-                    ? `Class Score Grid: ${scoresData.assessment.title} (/${scoresData.assessment.maxScore})`
-                    : "Class Score Grid"}
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Teacher-only score entry. Boost points from approved
-                  redemptions appear automatically.
-                </p>
-              </div>
-            </div>
-
-            {scoresData && (
-              <button
-                type="button"
-                onClick={() => setShowCsvImport((prev) => !prev)}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                <span>{showCsvImport ? "Hide CSV" : "Import CSV"}</span>
-              </button>
-            )}
-          </div>
-
-          {showCsvImport && scoresData && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-              <label
-                htmlFor="csv-score-import"
-                className="block text-xs font-semibold text-slate-700"
-              >
-                Paste CSV (`email_or_id, score_or_status[, remarks]`)
-              </label>
-              <textarea
-                id="csv-score-import"
-                rows={4}
-                placeholder={
-                  "student1@classpulse.local, 45, Good work\n2026-0002, MISSING, Absent"
-                }
-                value={csvText}
-                onChange={(e) => setCsvText(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono"
-              />
-              {csvSummary && (
-                <p className="text-[11px] text-indigo-800">{csvSummary}</p>
-              )}
-              <button
-                type="button"
-                onClick={handleApplyCsv}
-                disabled={!csvText.trim()}
-                className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                Populate Grid from CSV
-              </button>
-            </div>
-          )}
-
-          {!selectedAssessmentId ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
-              Select or create an assessment on the left to enter student scores.
-            </div>
-          ) : loadingGrid ? (
-            <p className="text-xs text-slate-500">Loading class roster...</p>
-          ) : !scoresData || scoresData.rows.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
-              No students enrolled in this subject yet.
-            </div>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-[11px] text-slate-500">
-                      <th className="pb-2 pr-2">Student</th>
-                      <th className="pb-2 pr-2">Status</th>
-                      <th className="pb-2 pr-2">Raw Score</th>
-                      <th className="pb-2 pr-2">Boost</th>
-                      <th className="pb-2">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {scoresData.rows.map((row) => {
-                      const draft = drafts[row.enrollmentId] ?? {
-                        status: row.status,
-                        rawScore:
-                          row.rawScore !== null ? String(row.rawScore) : "",
-                        remarks: row.remarks ?? "",
-                      };
-                      return (
-                        <tr key={row.enrollmentId}>
-                          <td className="py-2 pr-2">
-                            <p className="font-semibold text-slate-900">
-                              {row.student.fullName}
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                              {row.student.institutionalId ?? row.student.email}
-                            </p>
-                          </td>
-                          <td className="py-2 pr-2">
-                            <select
-                              aria-label={`Status for ${row.student.fullName}`}
-                              value={draft.status}
-                              onChange={(e) => {
-                                const nextStatus = e.target
-                                  .value as ScoreDraft["status"];
-                                setDrafts((prev) => ({
-                                  ...prev,
-                                  [row.enrollmentId]: {
-                                    ...draft,
-                                    status: nextStatus,
-                                    rawScore:
-                                      nextStatus === "GRADED"
-                                        ? draft.rawScore || "0"
-                                        : "",
-                                  },
-                                }));
-                              }}
-                              className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
-                            >
-                              <option value="PENDING">Pending</option>
-                              <option value="GRADED">Graded</option>
-                              <option value="MISSING">Missing (0)</option>
-                              <option value="EXCUSED">Excused</option>
-                            </select>
-                          </td>
-                          <td className="py-2 pr-2">
-                            <input
-                              type="number"
-                              step="0.25"
-                              min={0}
-                              max={scoresData.assessment.maxScore}
-                              disabled={draft.status !== "GRADED"}
-                              aria-label={`Score for ${row.student.fullName}`}
-                              value={draft.rawScore}
-                              onChange={(e) =>
-                                setDrafts((prev) => ({
-                                  ...prev,
-                                  [row.enrollmentId]: {
-                                    ...draft,
-                                    rawScore: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100"
-                            />
-                          </td>
-                          <td className="py-2 pr-2">
-                            {row.bonusPoints > 0 ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
-                                <Sparkles className="h-3 w-3" />+
-                                {row.bonusPoints}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </td>
-                          <td className="py-2">
-                            <input
-                              type="text"
-                              maxLength={280}
-                              placeholder="Optional note..."
-                              aria-label={`Remarks for ${row.student.fullName}`}
-                              value={draft.remarks}
-                              onChange={(e) =>
-                                setDrafts((prev) => ({
-                                  ...prev,
-                                  [row.enrollmentId]: {
-                                    ...draft,
-                                    remarks: e.target.value,
-                                  },
-                                }))
-                              }
-                              className="w-full min-w-[120px] rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {scoreError && (
-                <p
-                  role="alert"
-                  className="rounded-xl bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700"
-                >
-                  {scoreError}
-                </p>
-              )}
-              {scoreMessage && (
-                <p
-                  role="status"
-                  className="rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-800"
-                >
-                  {scoreMessage}
-                </p>
-              )}
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  disabled={savingScores || isArchived}
-                  onClick={() => void handleSaveScores()}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  <span>{savingScores ? "Saving..." : "Save Scores"}</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
       </div>
 
       {/* Teacher Class Standing Summary Table */}
@@ -882,7 +730,7 @@ export function TeacherAssessmentsPanel({
                 Class Standing Summary ({classStandings.length})
               </h3>
               <p className="text-xs text-slate-500">
-                Live calculated standings, manual INC/DRP overrides, and downloadable CSV grade sheets.
+                Live calculated standings, manual INC/DRP overrides, and downloadable Excel (.xlsx) grade sheets.
               </p>
             </div>
           </div>
@@ -897,7 +745,7 @@ export function TeacherAssessmentsPanel({
             <span>
               {downloadingTarget === "class"
                 ? "Downloading..."
-                : "Download Class Grade Sheet (CSV)"}
+                : "Download Class Grade Sheet (.xlsx)"}
             </span>
           </button>
         </div>

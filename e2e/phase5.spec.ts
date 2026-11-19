@@ -58,12 +58,19 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await page.getByRole("button", { name: "Create Reward" }).click();
   await expect(page.getByText("Exam Score Boost").first()).toBeVisible();
 
-  // Standing & Gradebook tab: create Midterm Exam (max 50) and enter raw score 45 -> 90.00% (1.75)
+  // Standing & Gradebook tab: create Midterm Exam (max 50), open dedicated grading page, and enter raw score 45 -> 90.00% (1.75)
   await page.getByRole("tab", { name: "Standing & Gradebook" }).click();
   await page.getByRole("button", { name: "New Assessment" }).click();
   await page.fill("#assessment-title", "Midterm Exam");
   await page.fill("#assessment-max-score", "50");
   await page.getByRole("button", { name: "Create Assessment" }).click();
+
+  const gradeMidtermLink = page.getByRole("link", {
+    name: "Grade students for Midterm Exam",
+  });
+  await expect(gradeMidtermLink).toBeVisible();
+  await gradeMidtermLink.click();
+  await expect(page).toHaveURL(/\/subjects\/.+\/assessments\/.+/);
   await expect(
     page.getByText("Class Score Grid: Midterm Exam (/50)")
   ).toBeVisible();
@@ -72,6 +79,10 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await page.getByLabel("Score for Student 1").fill("45");
   await page.getByRole("button", { name: "Save Scores" }).click();
   await expect(page.getByText("Saved 1 student score(s).")).toBeVisible();
+
+  await page.getByRole("link", { name: "Back to Gradebook" }).click();
+  await expect(page).toHaveURL(subjectUrl);
+  await expect(page.getByText("90.00%").first()).toBeVisible();
 
   // Sign out Teacher
   await page

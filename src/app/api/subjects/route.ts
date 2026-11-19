@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
 import { jsonError, requireAuth, requireRole } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
+import { DEFAULT_SINGLE_TERM_CATEGORIES } from "@/lib/grading/default-scale";
 import {
   createSubjectSchema,
   generateInviteCode,
@@ -163,6 +164,21 @@ export async function POST(request: Request) {
         _count: { select: { enrollments: true } },
       },
     });
+
+    if (typeof tx.gradeCategory?.createMany === "function") {
+      await tx.gradeCategory.createMany({
+        data: DEFAULT_SINGLE_TERM_CATEGORIES.map((category) => ({
+          subjectId: created.id,
+          termKey: category.termKey,
+          name: category.name,
+          categoryType: category.categoryType,
+          weightPct: category.weightPct,
+          aggregationMethod: category.aggregationMethod,
+          targetPointsCap: category.targetPointsCap,
+          sortOrder: category.sortOrder,
+        })),
+      });
+    }
 
     await recordAuditLog(
       {

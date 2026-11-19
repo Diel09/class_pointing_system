@@ -213,53 +213,65 @@ export async function PUT(
 
   const ipAddress = getClientIp(request);
 
-  await db.$transaction(async (tx) => {
-    for (const entry of parsed.data.scores) {
-      const normalizedRawScore =
-        entry.status === "GRADED" ? (entry.rawScore ?? 0) : null;
-      const remarks = entry.remarks?.trim() || null;
+  try {
+    await db.$transaction(
+      async (tx) => {
+        for (const entry of parsed.data.scores) {
+          const normalizedRawScore =
+            entry.status === "GRADED" ? (entry.rawScore ?? 0) : null;
+          const remarks = entry.remarks?.trim() || null;
 
-      await tx.assessmentScore.upsert({
-        where: {
-          assessmentId_enrollmentId: {
-            assessmentId: id,
-            enrollmentId: entry.enrollmentId,
+          await tx.assessmentScore.upsert({
+            where: {
+              assessmentId_enrollmentId: {
+                assessmentId: id,
+                enrollmentId: entry.enrollmentId,
+              },
+            },
+            update: {
+              status: entry.status,
+              rawScore: normalizedRawScore,
+              remarks,
+              updatedByTeacherId: user.id,
+            },
+            create: {
+              assessmentId: id,
+              enrollmentId: entry.enrollmentId,
+              status: entry.status,
+              rawScore: normalizedRawScore,
+              bonusPoints: 0,
+              allowExtraCredit: false,
+              remarks,
+              updatedByTeacherId: user.id,
+            },
+          });
+        }
+
+        await recordAuditLog(
+          {
+            actorUserId: user.id,
+            subjectId: assessment.subjectId,
+            action: "ASSESSMENT_SCORES_UPDATED",
+            targetType: "Assessment",
+            targetId: id,
+            afterState: {
+              updatedCount: parsed.data.scores.length,
+            },
+            ipAddress,
           },
-        },
-        update: {
-          status: entry.status,
-          rawScore: normalizedRawScore,
-          remarks,
-          updatedByTeacherId: user.id,
-        },
-        create: {
-          assessmentId: id,
-          enrollmentId: entry.enrollmentId,
-          status: entry.status,
-          rawScore: normalizedRawScore,
-          bonusPoints: 0,
-          allowExtraCredit: false,
-          remarks,
-          updatedByTeacherId: user.id,
-        },
-      });
-    }
-
-    await recordAuditLog(
-      {
-        actorUserId: user.id,
-        subjectId: assessment.subjectId,
-        action: "ASSESSMENT_SCORES_UPDATED",
-        targetType: "Assessment",
-        targetId: id,
-        afterState: {
-          updatedCount: parsed.data.scores.length,
-        },
-        ipAddress,
+          tx
+        );
       },
-      tx
+      { timeout: 15000 }
     );
-  });
+  } catch (error) {
+    console.error("Update assessment scores error:", error);
+    return jsonError(
+      "Failed to save assessment scores.",
+      500,
+      "ERR_INTERNAL"
+    );
+  }
 
   const studentIdByEnrollment = new Map(
     validEnrollments

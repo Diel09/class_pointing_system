@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentUserMock = vi.fn();
@@ -220,17 +221,42 @@ describe("GET /api/subjects/[id]/grade-sheet", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("text/csv; charset=utf-8");
+    expect(res.headers.get("content-type")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("content-disposition")).toMatch(
-      /^attachment; filename="CS-101-1A-grade-sheet-\d{4}-\d{2}-\d{2}\.csv"$/
+      /^attachment; filename="CS-101-1A-grade-sheet-\d{4}-\d{2}-\d{2}\.xlsx"$/
     );
 
-    const csv = await res.text();
-    expect(csv).toContain("Full Class Grade Sheet");
-    expect(csv).toContain("Student One");
-    expect(csv).toContain("96.00%,1.25,Superior,Passing,NONE,96.00%,1.25");
-    expect(csv).toContain("GRADED,46,2,48,96.00%,Great improvement");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await res.arrayBuffer());
+    expect(workbook.worksheets.map((ws) => ws.name)).toEqual([
+      "Full Grade Sheet",
+      "Summary",
+    ]);
+
+    const fullRows: unknown[][] = [];
+    workbook.getWorksheet("Full Grade Sheet")!.eachRow((row) => {
+      fullRows.push((row.values as unknown[]).slice(1));
+    });
+    const fullText = fullRows.map((r) => r.join("|")).join("\n");
+
+    expect(fullText).toContain("Full Class Grade Sheet");
+    expect(fullText).toContain("Student One");
+    expect(fullText).toContain("96.00%|1.25|Superior|Passing|NONE|96.00%|1.25");
+    expect(fullText).toContain("GRADED|48|96.00%|Great improvement");
+    expect(fullText).not.toContain("Wallet Available");
+    expect(fullText).not.toContain("Boost Pts");
+
+    const summaryRows: unknown[][] = [];
+    workbook.getWorksheet("Summary")!.eachRow((row) => {
+      summaryRows.push((row.values as unknown[]).slice(1));
+    });
+    expect(summaryRows).toEqual([
+      ["Student Name", "Grade", "Grade Equivalent"],
+      ["Student One", "96.00%", "1.25"],
+    ]);
   });
 
   it("downloads individual student grade sheet CSV when enrollmentId is specified", async () => {
@@ -302,14 +328,43 @@ describe("GET /api/subjects/[id]/grade-sheet", () => {
     );
 
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
     expect(res.headers.get("content-disposition")).toMatch(
-      /^attachment; filename="CS-101-1A-2026-0001-Student-One-grade-sheet-\d{4}-\d{2}-\d{2}\.csv"$/
+      /^attachment; filename="CS-101-1A-2026-0001-Student-One-grade-sheet-\d{4}-\d{2}-\d{2}\.xlsx"$/
     );
 
-    const csv = await res.text();
-    expect(csv).toContain("Individual Student Grade Sheet");
-    expect(csv).toContain("Overall Percentage,96.00%");
-    expect(csv).toContain("Grade Scale Equivalent,1.25");
-    expect(csv).toContain("Quiz 1,2026-09-10,50,GRADED,46,2,No,48,96.00%,Yes,Great improvement");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await res.arrayBuffer());
+    expect(workbook.worksheets.map((ws) => ws.name)).toEqual([
+      "Student Grade Sheet",
+      "Summary",
+    ]);
+
+    const detailRows: unknown[][] = [];
+    workbook.getWorksheet("Student Grade Sheet")!.eachRow((row) => {
+      detailRows.push((row.values as unknown[]).slice(1));
+    });
+    const detailText = detailRows.map((r) => r.join("|")).join("\n");
+
+    expect(detailText).toContain("Individual Student Grade Sheet");
+    expect(detailText).toContain("Overall Percentage|96.00%");
+    expect(detailText).toContain("Grade Scale Equivalent|1.25");
+    expect(detailText).toContain(
+      "Quiz 1|2026-09-10|50|GRADED|48|96.00%|Yes|Great improvement"
+    );
+    expect(detailText).not.toContain("Wallet Available");
+    expect(detailText).not.toContain("Total Earned Points");
+    expect(detailText).not.toContain("Boost Points");
+
+    const summaryRows: unknown[][] = [];
+    workbook.getWorksheet("Summary")!.eachRow((row) => {
+      summaryRows.push((row.values as unknown[]).slice(1));
+    });
+    expect(summaryRows).toEqual([
+      ["Student Name", "Grade", "Grade Equivalent"],
+      ["Student One", "96.00%", "1.25"],
+    ]);
   });
 });

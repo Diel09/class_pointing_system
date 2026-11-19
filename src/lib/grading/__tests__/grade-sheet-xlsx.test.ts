@@ -1,13 +1,14 @@
+import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { computeStanding } from "@/lib/grading/computeStanding";
 import { DEFAULT_PH_GRADE_SCALE } from "@/lib/grading/default-scale";
-import {
-  buildGradeSheetFilename,
-  escapeCsvCell,
-  formatClassGradeSheetCsv,
-  formatStudentGradeSheetCsv,
-} from "@/lib/grading/grade-sheet-csv";
 import type { SubjectGradeSheetData } from "@/lib/grading/grade-sheet-service";
+import {
+  buildClassGradeSheetWorkbook,
+  buildGradeSheetFilename,
+  buildStudentGradeSheetWorkbook,
+  sanitizeSpreadsheetCell,
+} from "@/lib/grading/grade-sheet-xlsx";
 
 function buildFixtureData(options?: {
   emptyStudents?: boolean;
@@ -186,9 +187,6 @@ function buildFixtureData(options?: {
           {
             enrollmentId: "enroll-1",
             enrolledAt: new Date("2026-08-19T00:00:00.000Z"),
-            availableBalance: 25,
-            escrowedBalance: 10,
-            earnedMeritAndAttendancePts: 35,
             student: {
               id: "student-1",
               fullName: "Dela Cruz, Juan",
@@ -213,9 +211,6 @@ function buildFixtureData(options?: {
           {
             enrollmentId: "enroll-2",
             enrolledAt: new Date("2026-08-20T00:00:00.000Z"),
-            availableBalance: 0,
-            escrowedBalance: 0,
-            earnedMeritAndAttendancePts: 0,
             student: {
               id: "student-2",
               fullName: "Reyes, Maria",
@@ -241,93 +236,133 @@ function buildFixtureData(options?: {
   };
 }
 
-describe("grade-sheet-csv helpers", () => {
-  it("escapes RFC 4180 characters and neutralizes spreadsheet formula injection", () => {
-    expect(escapeCsvCell("plain")).toBe("plain");
-    expect(escapeCsvCell('a, "b"')).toBe('"a, ""b"""');
-    expect(escapeCsvCell("=SUM(A1:A2)")).toBe("'=SUM(A1:A2)");
-    expect(escapeCsvCell("+1+1")).toBe("'+1+1");
-    expect(escapeCsvCell("-cmd")).toBe("'-cmd");
-    expect(escapeCsvCell("@HYPERLINK")).toBe("'@HYPERLINK");
-    expect(escapeCsvCell("-5")).toBe("-5");
-    expect(escapeCsvCell("95.50%")).toBe("95.50%");
-    expect(escapeCsvCell(42)).toBe("42");
-    expect(escapeCsvCell(true)).toBe("Yes");
-    expect(escapeCsvCell(false)).toBe("No");
-    expect(escapeCsvCell(null)).toBe("");
+function sheetToRows(sheet: ExcelJS.Worksheet): unknown[][] {
+  const rows: unknown[][] = [];
+  sheet.eachRow((row) => {
+    const vals = row.values as unknown[];
+    rows.push(vals.slice(1));
+  });
+  return rows;
+}
+
+describe("grade-sheet-xlsx helpers", () => {
+  it("neutralizes spreadsheet formula injection on string cells", () => {
+    expect(sanitizeSpreadsheetCell("plain")).toBe("plain");
+    expect(sanitizeSpreadsheetCell("=SUM(A1:A2)")).toBe("'=SUM(A1:A2)");
+    expect(sanitizeSpreadsheetCell("+1+1")).toBe("'+1+1");
+    expect(sanitizeSpreadsheetCell("-cmd")).toBe("'-cmd");
+    expect(sanitizeSpreadsheetCell("@HYPERLINK")).toBe("'@HYPERLINK");
+    expect(sanitizeSpreadsheetCell("-5")).toBe("-5");
+    expect(sanitizeSpreadsheetCell("95.50%")).toBe("95.50%");
+    expect(sanitizeSpreadsheetCell(42)).toBe(42);
+    expect(sanitizeSpreadsheetCell(true)).toBe("Yes");
+    expect(sanitizeSpreadsheetCell(false)).toBe("No");
+    expect(sanitizeSpreadsheetCell(null)).toBe("");
   });
 
-  it("builds safe filenames for full class and single student exports", () => {
+  it("builds safe .xlsx filenames for full class and single student exports", () => {
     const data = buildFixtureData();
     expect(buildGradeSheetFilename(data)).toBe(
-      "CS-101-1A-grade-sheet-2026-11-18.csv"
+      "CS-101-1A-grade-sheet-2026-11-18.xlsx"
     );
     expect(buildGradeSheetFilename(data, data.students[0])).toBe(
-      "CS-101-1A-2026-0001-Dela-Cruz-Juan-grade-sheet-2026-11-18.csv"
+      "CS-101-1A-2026-0001-Dela-Cruz-Juan-grade-sheet-2026-11-18.xlsx"
     );
   });
 
-  it("formats full class CSV with UTF-8 BOM, standings, overrides, assessments, and scale reference", () => {
+  it("builds a two-tab class workbook with Summary (Name, Grade, Grade Equivalent) and zero point columns", async () => {
     const data = buildFixtureData();
-    const csv = formatClassGradeSheetCsv(data);
+    const bytes = await buildClassGradeSheetWorkbook(data);
 
-    expect(csv.startsWith("\uFEFF")).toBe(true);
-    expect(csv).toContain("Grade Sheet Report,Full Class Grade Sheet");
-    expect(csv).toContain("Subject Code,CS 101");
-    expect(csv).toContain("Grading Scale,Default Philippine 1.00–5.00");
-    expect(csv).toContain("Enrolled Students,2");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes.buffer as ArrayBuffer);
 
-    // Student 1: Quizzes 48/50 = 96% (weight 80), Attendance 75% (weight 20) -> 91.80% -> 1.50
-    expect(csv).toContain('"Dela Cruz, Juan"');
-    expect(csv).toContain("91.80%,1.50,Very Good,Passing,NONE,91.80%,1.50");
-    // Boosted score 45 + 3 = 48 / 50 (96.00%) and neutralized formula remark
-    expect(csv).toContain("GRADED,45,3,48,96.00%,'=cmd|' /C calc'!A0 Great boost");
+    expect(workbook.worksheets.map((ws) => ws.name)).toEqual([
+      "Full Grade Sheet",
+      "Summary",
+    ]);
 
-    // Student 2: INC override preserves pre-override computed 0.00% / 5.00
-    expect(csv).toContain('"Reyes, Maria"');
-    expect(csv).toContain("0.00%,INC,Incomplete,Not Passing,INC,0.00%,5.00");
+    const fullSheet = workbook.getWorksheet("Full Grade Sheet")!;
+    const fullText = sheetToRows(fullSheet)
+      .map((r) => r.join("|"))
+      .join("\n");
 
-    // Grade scale reference block
-    expect(csv).toContain("ACTIVE GRADING SCALE REFERENCE");
-    expect(csv).toContain("97.00%,100.00%,1.00,Excellent,Yes");
-    expect(csv).toContain("0.00%,74.99%,5.00,Failed,No");
+    expect(fullText).toContain("Full Class Grade Sheet");
+    expect(fullText).toContain("CS 101");
+    expect(fullText).toContain("Dela Cruz, Juan");
+    expect(fullText).toContain("91.80%|1.50|Very Good|Passing|NONE|91.80%|1.50");
+    // Effective score (45 + 3 = 48) is shown without Boost Pts or Raw Score columns
+    expect(fullText).toContain("GRADED|48|96.00%|'=cmd|' /C calc'!A0 Great boost");
+    expect(fullText).toContain("Reyes, Maria");
+    expect(fullText).toContain("0.00%|INC|Incomplete|Not Passing|INC|0.00%|5.00");
+
+    // Zero point/boost columns anywhere
+    expect(fullText).not.toContain("Wallet Available");
+    expect(fullText).not.toContain("Wallet Escrowed");
+    expect(fullText).not.toContain("Earned Merit");
+    expect(fullText).not.toContain("Boost Pts");
+
+    const summarySheet = workbook.getWorksheet("Summary")!;
+    const summaryRows = sheetToRows(summarySheet);
+    expect(summaryRows).toEqual([
+      ["Student Name", "Grade", "Grade Equivalent"],
+      ["Dela Cruz, Juan", "91.80%", "1.50"],
+      ["Reyes, Maria", "0.00%", "INC"],
+    ]);
   });
 
-  it("supports multi-term splits and empty classes cleanly", () => {
+  it("supports multi-term splits and empty classes cleanly", async () => {
     const multiTermData = buildFixtureData({ multiTerm: true });
-    const multiCsv = formatClassGradeSheetCsv(multiTermData);
-    expect(multiCsv).toContain("Term Split,Midterm (40%) / Finals (60%)");
-    expect(multiCsv).toContain("Midterm (Wt 40%) - %");
-    expect(multiCsv).toContain("Finals (Wt 60%) - %");
-    expect(multiCsv).toContain("Quizzes [Midterm] (Wt 80%) - %");
+    const multiBytes = await buildClassGradeSheetWorkbook(multiTermData);
+    const multiWb = new ExcelJS.Workbook();
+    await multiWb.xlsx.load(multiBytes.buffer as ArrayBuffer);
+    const multiText = sheetToRows(multiWb.getWorksheet("Full Grade Sheet")!)
+      .map((r) => r.join("|"))
+      .join("\n");
+
+    expect(multiText).toContain("Midterm (40%) / Finals (60%)");
+    expect(multiText).toContain("Midterm (Wt 40%) - %");
+    expect(multiText).toContain("Finals (Wt 60%) - %");
 
     const emptyData = buildFixtureData({ emptyStudents: true });
-    const emptyCsv = formatClassGradeSheetCsv(emptyData);
-    expect(emptyCsv).toContain("Enrolled Students,0");
-    expect(emptyCsv).toContain("Institutional ID,Student Name,Email");
-    expect(emptyCsv).toContain("ACTIVE GRADING SCALE REFERENCE");
+    const emptyBytes = await buildClassGradeSheetWorkbook(emptyData);
+    const emptyWb = new ExcelJS.Workbook();
+    await emptyWb.xlsx.load(emptyBytes.buffer as ArrayBuffer);
+    expect(sheetToRows(emptyWb.getWorksheet("Summary")!)).toEqual([
+      ["Student Name", "Grade", "Grade Equivalent"],
+    ]);
   });
 
-  it("formats individual student CSV as a structured report card", () => {
+  it("builds a two-tab individual student workbook with Summary tab and zero points rows", async () => {
     const data = buildFixtureData({ multiTerm: true });
-    const studentCsv = formatStudentGradeSheetCsv(data, data.students[0]!);
+    const bytes = await buildStudentGradeSheetWorkbook(data, data.students[0]!);
 
-    expect(studentCsv.startsWith("\uFEFF")).toBe(true);
-    expect(studentCsv).toContain(
-      "Grade Sheet Report,Individual Student Grade Sheet"
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes.buffer as ArrayBuffer);
+
+    expect(workbook.worksheets.map((ws) => ws.name)).toEqual([
+      "Student Grade Sheet",
+      "Summary",
+    ]);
+
+    const detailText = sheetToRows(workbook.getWorksheet("Student Grade Sheet")!)
+      .map((r) => r.join("|"))
+      .join("\n");
+
+    expect(detailText).toContain("Individual Student Grade Sheet");
+    expect(detailText).toContain("Student Name|Dela Cruz, Juan");
+    expect(detailText).toContain("ATTENDANCE SUMMARY");
+    expect(detailText).toContain(
+      "Midterm|Quizzes|Quiz 1, Intro|2026-09-10|50|GRADED|48|96.00%|Yes|'=cmd|' /C calc'!A0 Great boost"
     );
-    expect(studentCsv).toContain('Student Name,"Dela Cruz, Juan"');
-    expect(studentCsv).toContain("Institutional ID,2026-0001");
-    expect(studentCsv).toContain("OVERALL CLASS STANDING");
-    expect(studentCsv).toContain("ATTENDANCE & POINTS SUMMARY");
-    expect(studentCsv).toContain("Wallet Available Points,25");
-    expect(studentCsv).toContain("Wallet Escrowed Points,10");
-    expect(studentCsv).toContain("Total Earned Points (Merits + Attendance),35");
-    expect(studentCsv).toContain("TERM & CATEGORY BREAKDOWN");
-    expect(studentCsv).toContain("ASSESSMENT SCORES DETAIL");
-    expect(studentCsv).toContain(
-      'Midterm,Quizzes,"Quiz 1, Intro",2026-09-10,50,GRADED,45,3,No,48,96.00%,Yes,\'=cmd|\' /C calc\'!A0 Great boost'
-    );
-    expect(studentCsv).toContain("ACTIVE GRADING SCALE REFERENCE");
+    expect(detailText).not.toContain("Wallet Available");
+    expect(detailText).not.toContain("Wallet Escrowed");
+    expect(detailText).not.toContain("Total Earned Points");
+    expect(detailText).not.toContain("Boost Points");
+
+    expect(sheetToRows(workbook.getWorksheet("Summary")!)).toEqual([
+      ["Student Name", "Grade", "Grade Equivalent"],
+      ["Dela Cruz, Juan", "90.72%", "1.75"],
+    ]);
   });
 });

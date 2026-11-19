@@ -1,5 +1,5 @@
 import type { NotificationType } from "@prisma/client";
-import webpush from "web-push";
+import { sendNotification, setVapidDetails } from "web-push";
 import { db } from "@/lib/db";
 import { getVapidConfig } from "@/lib/env";
 
@@ -24,12 +24,20 @@ let vapidInitializedForKey: string | null = null;
 
 function ensureVapidConfigured(): boolean {
   const vapid = getVapidConfig();
-  if (!vapid) {
+  if (!vapid || typeof setVapidDetails !== "function") {
     return false;
   }
-  if (vapidInitializedForKey !== `${vapid.publicKey}:${vapid.subject}`) {
-    webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
-    vapidInitializedForKey = `${vapid.publicKey}:${vapid.subject}`;
+  const cacheKey = `${vapid.publicKey}:${vapid.subject}`;
+  if (vapidInitializedForKey !== cacheKey) {
+    try {
+      setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey);
+      vapidInitializedForKey = cacheKey;
+    } catch (err) {
+      if (process.env.NODE_ENV !== "test") {
+        console.warn("Web Push VAPID setup failed:", err);
+      }
+      return false;
+    }
   }
   return true;
 }
@@ -92,73 +100,73 @@ export async function dispatchNotifications(
     }
   }
 
-  if (!ensureVapidConfigured()) {
-    return { createdCount, pushAttempted: 0, prunedCount: 0 };
-  }
-
-  const pushRepo = (
-    db as unknown as {
-      pushSubscription?: {
-        findMany?: (args: {
-          where: { userId: { in: string[] } };
-          select: {
-            id: true;
-            userId: true;
-            endpoint: true;
-            p256dh: true;
-            auth: true;
-          };
-        }) => Promise<StoredSubscription[]>;
-        deleteMany?: (args: {
-          where: { id: { in: string[] } };
-        }) => Promise<unknown>;
-      };
+  try {
+    if (!ensureVapidConfigured() || typeof sendNotification !== "function") {
+      return { createdCount, pushAttempted: 0, prunedCount: 0 };
     }
-  ).pushSubscription;
 
-  if (typeof pushRepo?.findMany !== "function") {
-    return { createdCount, pushAttempted: 0, prunedCount: 0 };
-  }
+    const pushRepo = (
+      db as unknown as {
+        pushSubscription?: {
+          findMany?: (args: {
+            where: { userId: { in: string[] } };
+            select: {
+              id: true;
+              userId: true;
+              endpoint: true;
+              p256dh: true;
+              auth: true;
+            };
+          }) => Promise<StoredSubscription[]>;
+          deleteMany?: (args: {
+            where: { id: { in: string[] } };
+          }) => Promise<unknown>;
+        };
+      }
+    ).pushSubscription;
 
-  const uniqueUserIds = Array.from(new Set(items.map((item) => item.userId)));
-  const subscriptions = await pushRepo.findMany({
-    where: { userId: { in: uniqueUserIds } },
-    select: {
-      id: true,
-      userId: true,
-      endpoint: true,
-      p256dh: true,
-      auth: true,
-    },
-  });
+    if (typeof pushRepo?.findMany !== "function") {
+      return { createdCount, pushAttempted: 0, prunedCount: 0 };
+    }
 
-  if (subscriptions.length === 0) {
-    return { createdCount, pushAttempted: 0, prunedCount: 0 };
-  }
-
-  const subsByUser = new Map<string, StoredSubscription[]>();
-  for (const sub of subscriptions) {
-    const existing = subsByUser.get(sub.userId) ?? [];
-    existing.push(sub);
-    subsByUser.set(sub.userId, existing);
-  }
-
-  const staleSubscriptionIds = new Set<string>();
-  const deliveries: Promise<void>[] = [];
-
-  for (const item of items) {
-    const userSubs = subsByUser.get(item.userId) ?? [];
-    const payload = JSON.stringify({
-      title: item.title,
-      body: item.body,
-      linkUrl: item.linkUrl ?? "/dashboard",
-      tag: `${item.type}:${item.subjectId ?? "global"}`,
+    const uniqueUserIds = Array.from(new Set(items.map((item) => item.userId)));
+    const subscriptions = await pushRepo.findMany({
+      where: { userId: { in: uniqueUserIds } },
+      select: {
+        id: true,
+        userId: true,
+        endpoint: true,
+        p256dh: true,
+        auth: true,
+      },
     });
 
-    for (const sub of userSubs) {
-      deliveries.push(
-        webpush
-          .sendNotification(
+    if (subscriptions.length === 0) {
+      return { createdCount, pushAttempted: 0, prunedCount: 0 };
+    }
+
+    const subsByUser = new Map<string, StoredSubscription[]>();
+    for (const sub of subscriptions) {
+      const existing = subsByUser.get(sub.userId) ?? [];
+      existing.push(sub);
+      subsByUser.set(sub.userId, existing);
+    }
+
+    const staleSubscriptionIds = new Set<string>();
+    const deliveries: Promise<void>[] = [];
+
+    for (const item of items) {
+      const userSubs = subsByUser.get(item.userId) ?? [];
+      const payload = JSON.stringify({
+        title: item.title,
+        body: item.body,
+        linkUrl: item.linkUrl ?? "/dashboard",
+        tag: `${item.type}:${item.subjectId ?? "global"}`,
+      });
+
+      for (const sub of userSubs) {
+        deliveries.push(
+          sendNotification(
             {
               endpoint: sub.endpoint,
               keys: {
@@ -168,34 +176,40 @@ export async function dispatchNotifications(
             },
             payload
           )
-          .then(() => undefined)
-          .catch((err: unknown) => {
-            const status = getPushStatusCode(err);
-            if (status === 404 || status === 410) {
-              staleSubscriptionIds.add(sub.id);
-            } else if (process.env.NODE_ENV !== "test") {
-              console.warn("Web Push delivery failed:", err);
-            }
-          })
-      );
+            .then(() => undefined)
+            .catch((err: unknown) => {
+              const status = getPushStatusCode(err);
+              if (status === 404 || status === 410) {
+                staleSubscriptionIds.add(sub.id);
+              } else if (process.env.NODE_ENV !== "test") {
+                console.warn("Web Push delivery failed:", err);
+              }
+            })
+        );
+      }
     }
-  }
 
-  await Promise.allSettled(deliveries);
+    await Promise.allSettled(deliveries);
 
-  if (staleSubscriptionIds.size > 0 && typeof pushRepo.deleteMany === "function") {
-    try {
-      await pushRepo.deleteMany({
-        where: { id: { in: Array.from(staleSubscriptionIds) } },
-      });
-    } catch {
-      // Ignore cleanup errors for expired subscriptions.
+    if (staleSubscriptionIds.size > 0 && typeof pushRepo.deleteMany === "function") {
+      try {
+        await pushRepo.deleteMany({
+          where: { id: { in: Array.from(staleSubscriptionIds) } },
+        });
+      } catch {
+        // Ignore cleanup errors for expired subscriptions.
+      }
     }
-  }
 
-  return {
-    createdCount,
-    pushAttempted: deliveries.length,
-    prunedCount: staleSubscriptionIds.size,
-  };
+    return {
+      createdCount,
+      pushAttempted: deliveries.length,
+      prunedCount: staleSubscriptionIds.size,
+    };
+  } catch (err) {
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("Web Push dispatch error:", err);
+    }
+    return { createdCount, pushAttempted: 0, prunedCount: 0 };
+  }
 }

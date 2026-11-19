@@ -19,10 +19,8 @@ vi.mock("@/lib/db", () => ({
 }));
 
 vi.mock("web-push", () => ({
-  default: {
-    setVapidDetails: setVapidDetailsMock,
-    sendNotification: sendNotificationMock,
-  },
+  setVapidDetails: setVapidDetailsMock,
+  sendNotification: sendNotificationMock,
 }));
 
 describe("dispatchNotifications", () => {
@@ -110,6 +108,39 @@ describe("dispatchNotifications", () => {
     expect(pushSubDeleteManyMock).toHaveBeenCalledWith({
       where: { id: { in: ["sub-gone"] } },
     });
+  });
+
+  it("catches invalid VAPID configuration errors without failing notification persistence", async () => {
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "bad-public-key";
+    process.env.VAPID_PRIVATE_KEY = "bad-private-key";
+    process.env.VAPID_SUBJECT = "invalid-subject";
+
+    notificationCreateManyMock.mockResolvedValue({ count: 1 });
+    setVapidDetailsMock.mockImplementationOnce(() => {
+      throw new Error("Invalid VAPID subject");
+    });
+
+    const { dispatchNotifications } = await import(
+      "@/lib/notifications/dispatch"
+    );
+    const result = await dispatchNotifications([
+      {
+        userId: "user-1",
+        subjectId: "subj-1",
+        type: "SCORE_UPDATED",
+        title: "Score Updated",
+        body: "Quiz 1: 18/20",
+        linkUrl: "/subjects/subj-1",
+      },
+    ]);
+
+    expect(setVapidDetailsMock).toHaveBeenCalledWith(
+      "invalid-subject",
+      "bad-public-key",
+      "bad-private-key"
+    );
+    expect(result).toEqual({ createdCount: 1, pushAttempted: 0, prunedCount: 0 });
+    expect(sendNotificationMock).not.toHaveBeenCalled();
   });
 
   afterAll(() => {

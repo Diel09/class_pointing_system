@@ -376,7 +376,13 @@ export async function POST(
           if (parsed.data.targetAssessmentId) {
             const targetAssessment = await tx.assessment.findUnique({
               where: { id: parsed.data.targetAssessmentId },
-              select: { id: true, subjectId: true, categoryId: true, title: true },
+              select: {
+                id: true,
+                subjectId: true,
+                categoryId: true,
+                title: true,
+                maxScore: true,
+              },
             });
             if (!targetAssessment || targetAssessment.subjectId !== id) {
               throw new RedemptionRejectedError(
@@ -395,6 +401,54 @@ export async function POST(
                 400
               );
             }
+
+            if (typeof tx.assessmentScore?.findUnique === "function") {
+              const existingScore = await tx.assessmentScore.findUnique({
+                where: {
+                  assessmentId_enrollmentId: {
+                    assessmentId: targetAssessment.id,
+                    enrollmentId: enrollment.id,
+                  },
+                },
+                select: {
+                  status: true,
+                  rawScore: true,
+                  bonusPoints: true,
+                  allowExtraCredit: true,
+                },
+              });
+
+              if (existingScore?.status === "EXCUSED") {
+                throw new RedemptionRejectedError(
+                  "Excused assessments do not count toward standing and cannot receive a score boost.",
+                  "ERR_ASSESSMENT_EXCUSED",
+                  400
+                );
+              }
+              if (existingScore?.status === "MISSING") {
+                throw new RedemptionRejectedError(
+                  "Missing assessments stay at 0 unless updated by your teacher, so a score boost cannot be applied.",
+                  "ERR_ASSESSMENT_MISSING",
+                  400
+                );
+              }
+              if (existingScore?.status === "GRADED") {
+                const maxScore = Number(targetAssessment.maxScore);
+                const currentCombined =
+                  Number(existingScore.rawScore ?? 0) +
+                  Number(existingScore.bonusPoints);
+                const allowsExtraCredit =
+                  reward.allowExtraCredit || existingScore.allowExtraCredit;
+                if (!allowsExtraCredit && currentCombined >= maxScore) {
+                  throw new RedemptionRejectedError(
+                    "This assessment has already reached its maximum score.",
+                    "ERR_SCORE_ALREADY_MAX",
+                    400
+                  );
+                }
+              }
+            }
+
             if (!resolvedTargetLabel) {
               resolvedTargetLabel = targetAssessment.title;
             }

@@ -6,6 +6,7 @@ import {
   Clock,
   LocateFixed,
   MapPin,
+  Maximize2,
   QrCode,
   Radio,
 } from "lucide-react";
@@ -204,13 +205,22 @@ export function TeacherAttendancePanel({
               })}
             </p>
           </div>
-          <Link
-            href={`/subjects/${subjectId}/attendance/${openSession.id}`}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
-          >
-            <span>Manage Live Session</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href={`/subjects/${subjectId}/attendance/${openSession.id}?focus=qr`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-white px-3.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+              <span>Full Screen QR</span>
+            </Link>
+            <Link
+              href={`/subjects/${subjectId}/attendance/${openSession.id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+            >
+              <span>Manage Live Session</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
       ) : isArchived ? (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">

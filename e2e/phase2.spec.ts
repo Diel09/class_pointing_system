@@ -52,6 +52,21 @@ test("teacher starts QR+GPS attendance session, overrides student, closes sessio
     page.getByRole("img", { name: "Live Attendance QR Code" })
   ).toBeVisible();
 
+  // 3b. Teacher focuses on the attendance QR code in full screen and exits cleanly
+  await page.getByRole("button", { name: "Full Screen QR" }).click();
+  const focusDialog = page.getByRole("dialog", {
+    name: "Full Screen Attendance QR Code",
+  });
+  await expect(focusDialog).toBeVisible();
+  await expect(
+    focusDialog.getByRole("img", {
+      name: "Full Screen Live Attendance QR Code",
+    })
+  ).toBeVisible();
+  await expect(focusDialog.getByText("Checked in: 0 / 2")).toBeVisible();
+  await focusDialog.getByRole("button", { name: "Exit Full Screen" }).click();
+  await expect(focusDialog).toBeHidden();
+
   // 4. Teacher manually overrides Student 1 to PRESENT (+10 pts)
   await page.getByRole("button", { name: "Override Student 1" }).click();
 

@@ -20,6 +20,7 @@ const assessmentFindManyMock = vi.fn();
 const assessmentFindUniqueMock = vi.fn();
 const assessmentCreateMock = vi.fn();
 const assessmentScoreFindManyMock = vi.fn();
+const assessmentScoreFindUniqueMock = vi.fn();
 const assessmentScoreUpsertMock = vi.fn();
 const assessmentScoreUpdateMock = vi.fn();
 const assessmentScoreCreateMock = vi.fn();
@@ -28,6 +29,7 @@ const pointLedgerCountMock = vi.fn();
 const pointLedgerGroupByMock = vi.fn();
 const pointLedgerCreateMock = vi.fn();
 const rewardItemFindUniqueMock = vi.fn();
+const redemptionFindManyMock = vi.fn();
 const redemptionUpdateMock = vi.fn();
 const auditLogCreateMock = vi.fn();
 const queryRawMock = vi.fn();
@@ -52,6 +54,7 @@ const txClient = {
     create: assessmentCreateMock,
   },
   assessmentScore: {
+    findUnique: assessmentScoreFindUniqueMock,
     upsert: assessmentScoreUpsertMock,
     update: assessmentScoreUpdateMock,
     create: assessmentScoreCreateMock,
@@ -84,6 +87,7 @@ vi.mock("@/lib/db", () => ({
       findUnique: assessmentFindUniqueMock,
     },
     assessmentScore: { findMany: assessmentScoreFindManyMock },
+    redemptionRequest: { findMany: redemptionFindManyMock },
     attendanceRecord: { findMany: attendanceRecordFindManyMock },
     pointLedgerEntry: {
       count: pointLedgerCountMock,
@@ -465,6 +469,194 @@ describe("Phase 5 Assessments, RBAC, Visibility & Score Boost Integration", () =
     expect(await allowedRes.json()).toMatchObject({
       isDefaultTemplate: false,
       requireGapFree: false,
+    });
+  });
+
+  it("blocks STUDENT from PATCH/DELETE on assessments and enforces score-boost guardrails for EXCUSED, MISSING, and maxed-out scores", async () => {
+    getCurrentUserMock.mockResolvedValue(studentSession());
+    subjectFindUniqueMock.mockResolvedValue(buildSubject());
+    subjectEnrollmentFindUniqueMock.mockResolvedValue({
+      id: ENROLL_ID,
+      subjectId: SUBJECT_ID,
+      studentId: "student-1",
+      availableBalance: 40,
+      escrowedBalance: 0,
+      manualStandingOverride: "NONE",
+    });
+
+    const { PATCH: patchAssessment, DELETE: deleteAssessment } = await import(
+      "@/app/api/assessments/[id]/route"
+    );
+
+    const patchRes = await patchAssessment(
+      new Request(`http://localhost/api/assessments/${ASSESSMENT_ID}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: "Hacked" }),
+      }),
+      { params: Promise.resolve({ id: ASSESSMENT_ID }) }
+    );
+    expect(patchRes.status).toBe(403);
+
+    const deleteRes = await deleteAssessment(
+      new Request(`http://localhost/api/assessments/${ASSESSMENT_ID}`, {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ id: ASSESSMENT_ID }) }
+    );
+    expect(deleteRes.status).toBe(403);
+
+    // Student GET assessments returns pendingBoost metadata
+    assessmentFindManyMock.mockResolvedValue([
+      {
+        id: ASSESSMENT_ID,
+        subjectId: SUBJECT_ID,
+        categoryId: CAT_EXAM_ID,
+        category: {
+          id: CAT_EXAM_ID,
+          name: "Exams",
+          termKey: "DEFAULT",
+          categoryType: "ASSESSMENT",
+        },
+        title: "Midterm Exam",
+        description: null,
+        maxScore: 50,
+        assessmentDate: null,
+        createdAt: new Date(),
+        scores: [
+          {
+            status: "GRADED",
+            rawScore: 45,
+            bonusPoints: 0,
+            allowExtraCredit: false,
+            remarks: null,
+            updatedAt: new Date(),
+          },
+        ],
+      },
+    ]);
+    redemptionFindManyMock.mockResolvedValue([
+      {
+        targetAssessmentId: ASSESSMENT_ID,
+        projectedScoreBoost: 2,
+        pointsEscrowed: 20,
+      },
+    ]);
+
+    const { GET: getAssessments } = await import(
+      "@/app/api/subjects/[id]/assessments/route"
+    );
+    const listRes = await getAssessments(
+      new Request(`http://localhost/api/subjects/${SUBJECT_ID}/assessments`),
+      { params: Promise.resolve({ id: SUBJECT_ID }) }
+    );
+    expect(listRes.status).toBe(200);
+    const listPayload = (await listRes.json()) as {
+      assessments: {
+        pendingBoost?: {
+          count: number;
+          totalBoost: number;
+          totalPointsEscrowed: number;
+        };
+      }[];
+    };
+    expect(listPayload.assessments[0]?.pendingBoost).toEqual({
+      count: 1,
+      totalBoost: 2,
+      totalPointsEscrowed: 20,
+    });
+
+    // Score-boost guardrails in POST /api/subjects/[id]/redemptions
+    rewardItemFindUniqueMock.mockResolvedValue({
+      id: REWARD_ID,
+      subjectId: SUBJECT_ID,
+      name: "Exam Boost",
+      rewardType: "SCORE_BOOST",
+      pointCostPerUnit: 10,
+      scoreValuePerUnit: 1,
+      eligibleCategoryIds: [CAT_EXAM_ID],
+      allowExtraCredit: false,
+      maxBoostPerAssessment: 5,
+      isActive: true,
+    });
+    assessmentFindUniqueMock.mockResolvedValue({
+      id: ASSESSMENT_ID,
+      subjectId: SUBJECT_ID,
+      categoryId: CAT_EXAM_ID,
+      title: "Midterm Exam",
+      maxScore: 50,
+    });
+
+    const { POST: submitRedemption } = await import(
+      "@/app/api/subjects/[id]/redemptions/route"
+    );
+
+    assessmentScoreFindUniqueMock.mockResolvedValueOnce({
+      status: "EXCUSED",
+      rawScore: null,
+      bonusPoints: 0,
+      allowExtraCredit: false,
+    });
+    const excusedRes = await submitRedemption(
+      new Request(`http://localhost/api/subjects/${SUBJECT_ID}/redemptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rewardItemId: REWARD_ID,
+          requestedUnits: 1,
+          targetAssessmentId: ASSESSMENT_ID,
+        }),
+      }),
+      { params: Promise.resolve({ id: SUBJECT_ID }) }
+    );
+    expect(excusedRes.status).toBe(400);
+    expect(await excusedRes.json()).toMatchObject({
+      code: "ERR_ASSESSMENT_EXCUSED",
+    });
+
+    assessmentScoreFindUniqueMock.mockResolvedValueOnce({
+      status: "MISSING",
+      rawScore: null,
+      bonusPoints: 0,
+      allowExtraCredit: false,
+    });
+    const missingRes = await submitRedemption(
+      new Request(`http://localhost/api/subjects/${SUBJECT_ID}/redemptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rewardItemId: REWARD_ID,
+          requestedUnits: 1,
+          targetAssessmentId: ASSESSMENT_ID,
+        }),
+      }),
+      { params: Promise.resolve({ id: SUBJECT_ID }) }
+    );
+    expect(missingRes.status).toBe(400);
+    expect(await missingRes.json()).toMatchObject({
+      code: "ERR_ASSESSMENT_MISSING",
+    });
+
+    assessmentScoreFindUniqueMock.mockResolvedValueOnce({
+      status: "GRADED",
+      rawScore: 50,
+      bonusPoints: 0,
+      allowExtraCredit: false,
+    });
+    const maxedRes = await submitRedemption(
+      new Request(`http://localhost/api/subjects/${SUBJECT_ID}/redemptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rewardItemId: REWARD_ID,
+          requestedUnits: 1,
+          targetAssessmentId: ASSESSMENT_ID,
+        }),
+      }),
+      { params: Promise.resolve({ id: SUBJECT_ID }) }
+    );
+    expect(maxedRes.status).toBe(400);
+    expect(await maxedRes.json()).toMatchObject({
+      code: "ERR_SCORE_ALREADY_MAX",
     });
   });
 });

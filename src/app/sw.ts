@@ -1,7 +1,8 @@
-import { defaultCache } from "@serwist/next/worker";
 import {
-  NetworkOnly,
+  CacheFirst,
+  ExpirationPlugin,
   Serwist,
+  StaleWhileRevalidate,
   type PrecacheEntry,
   type RuntimeCaching,
   type SerwistGlobalConfig,
@@ -68,28 +69,111 @@ interface SwGlobalScope {
 
 const swSelf = self as unknown as SwGlobalScope;
 
-const apiNetworkOnlyRules: RuntimeCaching[] = [
-  ...(["GET", "POST", "PUT", "PATCH", "DELETE"] as const).map((method) => ({
-    matcher: ({
-      url,
-      sameOrigin,
-    }: {
-      url: URL;
-      sameOrigin: boolean;
-    }) => sameOrigin && url.pathname.startsWith("/api/"),
-    method,
-    handler: new NetworkOnly(),
-  })),
+// Cache static assets only; let authenticated App Router navigations, RSC
+// prefetches, and /api/* requests go straight to the network natively.
+const staticAssetCaching: RuntimeCaching[] = [
+  {
+    matcher: /^https:\/\/fonts\.(?:gstatic)\.com\/.*/i,
+    handler: new CacheFirst({
+      cacheName: "google-fonts-webfonts",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 4,
+          maxAgeSeconds: 31_536_000,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /^https:\/\/fonts\.(?:googleapis)\.com\/.*/i,
+    handler: new StaleWhileRevalidate({
+      cacheName: "google-fonts-stylesheets",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 4,
+          maxAgeSeconds: 604_800,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /\.(?:eot|otf|ttc|ttf|woff|woff2|font\.css)$/i,
+    handler: new StaleWhileRevalidate({
+      cacheName: "static-font-assets",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 4,
+          maxAgeSeconds: 604_800,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i,
+    handler: new StaleWhileRevalidate({
+      cacheName: "static-image-assets",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 64,
+          maxAgeSeconds: 2_592_000,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /\/_next\/static.+\.js$/i,
+    handler: new CacheFirst({
+      cacheName: "next-static-js-assets",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 64,
+          maxAgeSeconds: 86_400,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /\/_next\/image\?url=.+$/i,
+    handler: new StaleWhileRevalidate({
+      cacheName: "next-image",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 64,
+          maxAgeSeconds: 86_400,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
+  {
+    matcher: /\.(?:css|less)$/i,
+    handler: new StaleWhileRevalidate({
+      cacheName: "static-style-assets",
+      plugins: [
+        new ExpirationPlugin({
+          maxEntries: 32,
+          maxAgeSeconds: 86_400,
+          maxAgeFrom: "last-used",
+        }),
+      ],
+    }),
+  },
 ];
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: true,
-  runtimeCaching: [...apiNetworkOnlyRules, ...defaultCache],
+  navigationPreload: false,
+  runtimeCaching: staticAssetCaching,
 });
 
+serwist.setCatchHandler(async () => Response.error());
 serwist.addEventListeners();
 
 swSelf.addEventListener("push", (rawEvent) => {

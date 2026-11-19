@@ -62,9 +62,6 @@ export interface AttendanceSummary {
 export interface GradeSheetStudentRow {
   enrollmentId: string;
   enrolledAt: Date;
-  availableBalance: number;
-  escrowedBalance: number;
-  earnedMeritAndAttendancePts: number;
   student: {
     id: string;
     fullName: string;
@@ -183,8 +180,6 @@ export async function buildSubjectGradeSheetData(options: {
         select: {
           id: true,
           enrolledAt: true,
-          availableBalance: true,
-          escrowedBalance: true,
           manualStandingOverride: true,
           student: {
             select: {
@@ -375,9 +370,6 @@ export async function buildSubjectGradeSheetData(options: {
     return {
       enrollmentId: enrollment.id,
       enrolledAt: enrollment.enrolledAt,
-      availableBalance: enrollment.availableBalance,
-      escrowedBalance: enrollment.escrowedBalance,
-      earnedMeritAndAttendancePts: earnedPts,
       student: enrollment.student,
       attendanceSummary: summarizeAttendance(
         studentAttendance,

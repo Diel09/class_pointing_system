@@ -8,6 +8,7 @@ import {
   LocateFixed,
   Lock,
   MapPin,
+  Maximize2,
   QrCode,
   RefreshCw,
   Search,
@@ -16,7 +17,8 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { LiveQrFocusOverlay } from "@/components/attendance/live-qr-focus-overlay";
 import { AttendanceStatusBadge } from "@/components/attendance/status-badge";
 import { AppShell } from "@/components/layout/app-shell";
 import { OfflineBanner } from "@/components/pwa/offline-banner";
@@ -118,6 +120,14 @@ export default function TeacherLiveAttendancePage() {
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [savingOverride, setSavingOverride] = useState(false);
 
+  const [isQrFocused, setIsQrFocused] = useState(false);
+  const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
+  const [canToggleBrowserFullscreen, setCanToggleBrowserFullscreen] =
+    useState(false);
+  const enteredBrowserFullscreenRef = useRef(false);
+  const appliedFocusParamRef = useRef(false);
+  const fullScreenTriggerRef = useRef<HTMLButtonElement | null>(null);
+
   const { data, isLoading, error } = useQuery<LiveSessionResponse>({
     queryKey: ["session-live", sessionId],
     queryFn: async () => {
@@ -150,6 +160,79 @@ export default function TeacherLiveAttendancePage() {
     const timerId = window.setInterval(updateTimer, 500);
     return () => window.clearInterval(timerId);
   }, [data?.qr, data?.session.status]);
+
+  useEffect(() => {
+    setCanToggleBrowserFullscreen(Boolean(document.fullscreenEnabled));
+
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement);
+      setIsBrowserFullscreen(active);
+      if (!active && enteredBrowserFullscreenRef.current) {
+        enteredBrowserFullscreenRef.current = false;
+        setIsQrFocused(false);
+        fullScreenTriggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      if (enteredBrowserFullscreenRef.current && document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (appliedFocusParamRef.current) return;
+    if (data?.session.status !== "OPEN" || !data.qr) return;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("focus") === "qr") {
+      appliedFocusParamRef.current = true;
+      setIsQrFocused(true);
+    }
+  }, [data?.session.status, data?.qr]);
+
+  function handleEnterQrFocus() {
+    setIsQrFocused(true);
+    const rootEl = document.documentElement;
+    if (rootEl.requestFullscreen && !document.fullscreenElement) {
+      rootEl
+        .requestFullscreen()
+        .then(() => {
+          enteredBrowserFullscreenRef.current = true;
+        })
+        .catch(() => {
+          // Native fullscreen can be blocked or unsupported (e.g., iOS Safari); overlay remains active.
+        });
+    }
+  }
+
+  const handleExitQrFocus = useCallback(() => {
+    enteredBrowserFullscreenRef.current = false;
+    setIsQrFocused(false);
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+    window.requestAnimationFrame(() => {
+      fullScreenTriggerRef.current?.focus();
+    });
+  }, []);
+
+  function handleToggleBrowserFullscreen() {
+    if (document.fullscreenElement) {
+      enteredBrowserFullscreenRef.current = false;
+      document.exitFullscreen?.().catch(() => {});
+    } else if (document.documentElement.requestFullscreen) {
+      document.documentElement
+        .requestFullscreen()
+        .then(() => {
+          enteredBrowserFullscreenRef.current = true;
+        })
+        .catch(() => {});
+    }
+  }
 
   async function handleRefreshAnchor() {
     setGpsError(null);
@@ -442,7 +525,7 @@ export default function TeacherLiveAttendancePage() {
             <div className="grid gap-6 lg:grid-cols-5">
               {/* Rotating QR Display */}
               <section className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <QrCode className="h-4 w-4 text-indigo-600" />
                     <h3 className="text-sm font-bold text-slate-900">
@@ -450,10 +533,23 @@ export default function TeacherLiveAttendancePage() {
                     </h3>
                   </div>
                   {data.session.status === "OPEN" && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                      <span>{countdownSec}s</span>
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        <span>{countdownSec}s</span>
+                      </span>
+                      {data.qr && (
+                        <button
+                          ref={fullScreenTriggerRef}
+                          type="button"
+                          onClick={handleEnterQrFocus}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>Full Screen QR</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -708,6 +804,24 @@ export default function TeacherLiveAttendancePage() {
                 </div>
               </section>
             </div>
+            <LiveQrFocusOverlay
+              open={isQrFocused}
+              onClose={handleExitQrFocus}
+              subject={data.subject}
+              sessionStatus={data.session.status}
+              qr={data.qr}
+              countdownSec={countdownSec}
+              checkedInCount={counts.PRESENT + counts.LATE}
+              totalStudents={roster.length}
+              presentCount={counts.PRESENT}
+              lateCount={counts.LATE}
+              presentPoints={data.session.presentPoints}
+              latePoints={data.session.latePoints}
+              isOnline={isOnline}
+              isBrowserFullscreen={isBrowserFullscreen}
+              canToggleBrowserFullscreen={canToggleBrowserFullscreen}
+              onToggleBrowserFullscreen={handleToggleBrowserFullscreen}
+            />
           </>
         )}
       </div>
