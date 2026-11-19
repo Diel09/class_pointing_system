@@ -27,7 +27,8 @@ test("teacher creates subject with invite QR and student joins with 0 pts wallet
   await subjectCard.click();
 
   await expect(page).toHaveURL(/\/subjects\/.+/);
-  await page.getByRole("tab", { name: "Roster & Computation" }).click();
+  await page.getByRole("tab", { name: "Student Roster" }).click();
+  await expect(page).toHaveURL(/\/subjects\/.+\/roster$/);
   await expect(page.getByText("Class Invite Code & QR")).toBeVisible();
 
   // Capture generated invite code

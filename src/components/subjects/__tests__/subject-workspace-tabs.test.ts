@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_SUBJECT_TAB_KEYS,
+  getSubjectTabHref,
   resolveSubjectTab,
   STUDENT_SUBJECT_TABS,
   TEACHER_SUBJECT_TABS,
@@ -24,12 +25,25 @@ describe("subject workspace tabs", () => {
     expect(resolveSubjectTab("roster", studentKeys)).toBe("grades");
   });
 
+  it("builds canonical dedicated routes for each subject workspace section", () => {
+    expect(getSubjectTabHref("sub_123", "grades")).toBe("/subjects/sub_123");
+    expect(getSubjectTabHref("sub_123", "attendance")).toBe(
+      "/subjects/sub_123/attendance"
+    );
+    expect(getSubjectTabHref("sub_123", "points")).toBe(
+      "/subjects/sub_123/points"
+    );
+    expect(getSubjectTabHref("sub_123", "roster")).toBe(
+      "/subjects/sub_123/roster"
+    );
+  });
+
   it("preserves full accessible labels alongside concise mobile labels", () => {
     expect(TEACHER_SUBJECT_TABS.map((tab) => tab.label)).toEqual([
       "Standing & Gradebook",
       "Attendance",
       "Points & Economy",
-      "Roster & Computation",
+      "Student Roster",
     ]);
     expect(STUDENT_SUBJECT_TABS.map((tab) => tab.label)).toEqual([
       "Assessments & Standing",

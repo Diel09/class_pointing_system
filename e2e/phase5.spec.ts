@@ -27,11 +27,15 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await expect(page).toHaveURL(/\/subjects\/.+/);
   const subjectUrl = page.url();
 
-  // Roster & Computation tab: enroll Student 1 and save default computation + grade scale
-  await page.getByRole("tab", { name: "Roster & Computation" }).click();
+  // Student Roster page: enroll Student 1
+  await page.getByRole("tab", { name: "Student Roster" }).click();
   await page.fill("#roster-input", "student1@classpulse.local");
   await page.getByRole("button", { name: "Add to Roster" }).click();
   await expect(page.getByText("Added: 1")).toBeVisible();
+
+  // Standing & Gradebook -> Computation & Scale: save default computation + grade scale
+  await page.getByRole("tab", { name: "Standing & Gradebook" }).click();
+  await page.getByRole("tab", { name: "Computation & Scale" }).click();
 
   await page.getByRole("button", { name: "Save Computation Rules" }).click();
   await expect(

@@ -29,7 +29,7 @@ test("GCash-style P2P QR transfer, redemption escrow, student cancel refund, and
   const subjectUrl = page.url();
 
   // Enroll Student 1 & Student 2
-  await page.getByRole("tab", { name: "Roster & Computation" }).click();
+  await page.getByRole("tab", { name: "Student Roster" }).click();
   await page.fill(
     "#roster-input",
     "student1@classpulse.local, student2@classpulse.local"

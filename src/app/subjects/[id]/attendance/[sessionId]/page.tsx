@@ -373,11 +373,11 @@ export default function TeacherLiveAttendancePage() {
     <AppShell>
       <div className="space-y-6">
         <Link
-          href={`/subjects/${subjectId}`}
+          href={`/subjects/${subjectId}/attendance`}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Back to Subject</span>
+          <span>Back to Attendance</span>
         </Link>
 
         {!isOnline && (

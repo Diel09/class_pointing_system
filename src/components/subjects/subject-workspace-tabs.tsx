@@ -7,6 +7,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export type SubjectTabKey = "grades" | "attendance" | "points" | "roster";
@@ -60,7 +61,7 @@ export const TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
   },
   {
     key: "roster",
-    label: "Roster & Computation",
+    label: "Student Roster",
     mobileLabel: "Roster",
     icon: Users,
   },
@@ -86,27 +87,47 @@ export function resolveSubjectTab(
   return allowedKeys[0] ?? "grades";
 }
 
+/**
+ * Returns the canonical Next.js route path for a subject workspace section.
+ */
+export function getSubjectTabHref(
+  subjectId: string,
+  tab: SubjectTabKey
+): string {
+  switch (tab) {
+    case "attendance":
+      return `/subjects/${subjectId}/attendance`;
+    case "points":
+      return `/subjects/${subjectId}/points`;
+    case "roster":
+      return `/subjects/${subjectId}/roster`;
+    case "grades":
+    default:
+      return `/subjects/${subjectId}`;
+  }
+}
+
 interface SubjectWorkspaceTabsProps {
+  subjectId: string;
   ariaLabel: string;
   tabs: readonly SubjectTabItem[];
   activeTab: SubjectTabKey;
-  onTabChange: (tab: SubjectTabKey) => void;
 }
 
 /**
- * Responsive workspace tab switcher: grid with concise labels & icons on mobile/tablet,
+ * Responsive link-based workspace tab switcher: grid with concise labels & icons on mobile/tablet,
  * single-row pill bar with full labels on desktop.
  */
 export function SubjectWorkspaceTabs({
+  subjectId,
   ariaLabel,
   tabs,
   activeTab,
-  onTabChange,
 }: SubjectWorkspaceTabsProps) {
   const isThreeTabLayout = tabs.length === 3;
 
   return (
-    <div
+    <nav
       role="tablist"
       aria-label={ariaLabel}
       className={cn(
@@ -117,15 +138,15 @@ export function SubjectWorkspaceTabs({
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.key;
+        const href = getSubjectTabHref(subjectId, tab.key);
 
         return (
-          <button
+          <Link
             key={tab.key}
-            type="button"
+            href={href}
             role="tab"
             aria-selected={isActive}
             aria-label={tab.label}
-            onClick={() => onTabChange(tab.key)}
             className={cn(
               "flex items-center justify-center rounded-xl font-semibold leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 lg:flex-1 lg:flex-row lg:gap-1.5 lg:px-3.5 lg:py-2 lg:text-xs",
               isThreeTabLayout
@@ -141,9 +162,9 @@ export function SubjectWorkspaceTabs({
               {tab.mobileLabel}
             </span>
             <span className="hidden lg:inline">{tab.label}</span>
-          </button>
+          </Link>
         );
       })}
-    </div>
+    </nav>
   );
 }

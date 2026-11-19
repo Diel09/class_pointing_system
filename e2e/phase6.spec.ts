@@ -41,7 +41,7 @@ test("Phase 6: notifications center, admin searchable audit log viewer, PWA mani
   await expect(page).toHaveURL(/\/subjects\/.+/);
   const subjectUrl = page.url();
 
-  await page.getByRole("tab", { name: "Roster & Computation" }).click();
+  await page.getByRole("tab", { name: "Student Roster" }).click();
   await page.fill("#roster-input", "student3@classpulse.local");
   await page.getByRole("button", { name: "Add to Roster" }).click();
   await expect(page.getByText("Added: 1")).toBeVisible();

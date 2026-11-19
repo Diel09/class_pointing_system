@@ -32,7 +32,7 @@ test("teacher starts QR+GPS attendance session, overrides student, closes sessio
   const subjectUrl = page.url();
 
   // 2. Enroll student1 and student2 into the subject
-  await page.getByRole("tab", { name: "Roster & Computation" }).click();
+  await page.getByRole("tab", { name: "Student Roster" }).click();
   await page.fill(
     "#roster-input",
     "student1@classpulse.local, student2@classpulse.local"
