@@ -74,6 +74,13 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await expect(
     page.getByText("Class Score Grid: Midterm Exam (/50)")
   ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth
+    )
+  ).toBe(true);
 
   await page.getByLabel("Status for Student 1").selectOption("GRADED");
   await page.getByLabel("Score for Student 1").fill("45");
@@ -83,6 +90,13 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await page.getByRole("link", { name: "Back to Gradebook" }).click();
   await expect(page).toHaveURL(subjectUrl);
   await expect(page.getByText("90.00%").first()).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth
+    )
+  ).toBe(true);
 
   // Sign out Teacher
   await page
@@ -103,6 +117,13 @@ test("Phase 5: teacher configures computation & scale, creates assessment & ente
   await expect(page.getByText("90.00%").first()).toBeVisible();
   await expect(page.getByText("1.75").first()).toBeVisible();
   await expect(page.locator("input[type='file']")).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth
+    )
+  ).toBe(true);
 
   await page.getByRole("tab", { name: "Points & Rewards" }).click();
   await page.fill("#redemption-units", "3");

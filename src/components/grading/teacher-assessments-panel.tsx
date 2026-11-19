@@ -439,10 +439,10 @@ export function TeacherAssessmentsPanel({
   return (
     <section className="space-y-6">
       {/* Assessments List & Creation */}
-      <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-indigo-600" />
+      <div className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-indigo-600 mt-0.5 sm:mt-0 shrink-0" />
             <div>
               <h3 className="text-sm font-bold text-slate-900">
                 Assessments ({assessments.length})
@@ -456,7 +456,7 @@ export function TeacherAssessmentsPanel({
             type="button"
             disabled={isArchived || assessmentCategories.length === 0}
             onClick={() => setShowCreateForm((prev) => !prev)}
-            className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 shrink-0"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>{showCreateForm ? "Close" : "New Assessment"}</span>
@@ -508,7 +508,7 @@ export function TeacherAssessmentsPanel({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="space-y-1">
                   <label
                     htmlFor="assessment-category"
@@ -520,7 +520,7 @@ export function TeacherAssessmentsPanel({
                     id="assessment-category"
                     value={categoryId}
                     onChange={(e) => setCategoryId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                    className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
                   >
                     {assessmentCategories.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -541,6 +541,7 @@ export function TeacherAssessmentsPanel({
                   <input
                     id="assessment-max-score"
                     type="number"
+                    inputMode="decimal"
                     step="0.5"
                     min="0.5"
                     required
@@ -548,7 +549,7 @@ export function TeacherAssessmentsPanel({
                     onChange={(e) =>
                       setMaxScore(Number.parseFloat(e.target.value) || 1)
                     }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                    className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
                   />
                 </div>
               </div>
@@ -599,7 +600,7 @@ export function TeacherAssessmentsPanel({
                 </label>
 
                 {submissionEnabled && (
-                  <div className="space-y-2.5 pl-5 pt-1 border-t border-slate-100">
+                  <div className="space-y-2.5 pl-3 sm:pl-5 pt-2 border-t border-slate-100">
                     <div className="space-y-1">
                       <label
                         htmlFor="assessment-due-at"
@@ -698,12 +699,12 @@ export function TeacherAssessmentsPanel({
                           onChange={(e) => setEditTitle(e.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold"
                         />
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <select
                             aria-label="Edit assessment category"
                             value={editCategoryId}
                             onChange={(e) => setEditCategoryId(e.target.value)}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                            className="w-full min-h-[38px] sm:min-h-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
                           >
                             {assessmentCategories.map((c) => (
                               <option key={c.id} value={c.id}>
@@ -713,6 +714,7 @@ export function TeacherAssessmentsPanel({
                           </select>
                           <input
                             type="number"
+                            inputMode="decimal"
                             step="0.5"
                             min="0.5"
                             required
@@ -723,10 +725,10 @@ export function TeacherAssessmentsPanel({
                                 Number.parseFloat(e.target.value) || 1
                               )
                             }
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs"
+                            className="w-full min-h-[38px] sm:min-h-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs"
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <input
                             type="date"
                             aria-label="Edit assessment date"
@@ -734,7 +736,7 @@ export function TeacherAssessmentsPanel({
                             onChange={(e) =>
                               setEditAssessmentDate(e.target.value)
                             }
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                            className="w-full min-h-[38px] sm:min-h-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
                           />
                           <input
                             type="text"
@@ -743,7 +745,7 @@ export function TeacherAssessmentsPanel({
                             aria-label="Edit assessment notes"
                             value={editDescription}
                             onChange={(e) => setEditDescription(e.target.value)}
-                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                            className="w-full min-h-[38px] sm:min-h-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
                           />
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
@@ -760,7 +762,7 @@ export function TeacherAssessmentsPanel({
                             <span>Allow Google Drive link submissions</span>
                           </label>
                           {editSubmissionEnabled && (
-                            <div className="space-y-1.5 pl-5">
+                            <div className="space-y-1.5 pl-3 sm:pl-5">
                               <input
                                 type="datetime-local"
                                 aria-label="Edit submission deadline"
@@ -827,9 +829,9 @@ export function TeacherAssessmentsPanel({
                         </div>
                       </form>
                     ) : (
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div className="min-w-0 flex-1 space-y-0.5">
-                          <p className="text-sm font-bold text-slate-900 truncate">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="text-sm font-bold text-slate-900 line-clamp-2 sm:truncate">
                             {a.title}
                           </p>
                           <p className="text-xs text-slate-500">
@@ -843,7 +845,7 @@ export function TeacherAssessmentsPanel({
                               : ""}
                           </p>
                           {a.description && (
-                            <p className="text-[11px] text-slate-500 truncate">
+                            <p className="text-[11px] text-slate-500 line-clamp-2 sm:truncate">
                               {a.description}
                             </p>
                           )}
@@ -868,11 +870,11 @@ export function TeacherAssessmentsPanel({
                             </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 sm:border-0 sm:pt-0 sm:gap-1.5 sm:shrink-0">
                           <Link
                             href={`/subjects/${subjectId}/assessments/${a.id}`}
                             aria-label={`Grade students for ${a.title}`}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
                           >
                             <span>Grade Students</span>
                             <ArrowRight className="h-3.5 w-3.5" />
@@ -882,7 +884,7 @@ export function TeacherAssessmentsPanel({
                             disabled={isArchived}
                             onClick={() => startEditAssessment(a)}
                             aria-label={`Edit ${a.title}`}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
+                            className="inline-flex items-center justify-center min-h-[38px] min-w-[38px] sm:min-h-0 sm:min-w-0 rounded-xl sm:rounded-lg border border-slate-200 sm:border-0 p-1.5 text-slate-500 sm:text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-50"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
@@ -891,7 +893,7 @@ export function TeacherAssessmentsPanel({
                             disabled={isArchived}
                             onClick={() => void handleDeleteAssessment(a.id)}
                             aria-label={`Delete ${a.title}`}
-                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                            className="inline-flex items-center justify-center min-h-[38px] min-w-[38px] sm:min-h-0 sm:min-w-0 rounded-xl sm:rounded-lg border border-rose-200/70 sm:border-0 p-1.5 text-rose-500 sm:text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -906,10 +908,10 @@ export function TeacherAssessmentsPanel({
       </div>
 
       {/* Teacher Class Standing Summary Table */}
-      <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Award className="h-4 w-4 text-indigo-600" />
+      <div className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2">
+            <Award className="h-4 w-4 text-indigo-600 mt-0.5 sm:mt-0 shrink-0" />
             <div>
               <h3 className="text-sm font-bold text-slate-900">
                 Class Standing Summary ({classStandings.length})
@@ -924,7 +926,7 @@ export function TeacherAssessmentsPanel({
             type="button"
             disabled={classStandings.length === 0 || downloadingTarget !== null}
             onClick={() => void handleDownloadGradeSheet()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 shrink-0"
           >
             <Download className="h-3.5 w-3.5" />
             <span>
@@ -947,9 +949,9 @@ export function TeacherAssessmentsPanel({
         {classStandings.length === 0 ? (
           <p className="text-xs text-slate-500">No enrolled students yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
+          <div className="md:overflow-x-auto">
+            <table className="block w-full text-left text-xs md:table">
+              <thead className="hidden md:table-header-group">
                 <tr className="border-b border-slate-200 text-[11px] text-slate-500">
                   <th className="pb-2 pr-3">Student</th>
                   <th className="pb-2 pr-3">Running %</th>
@@ -959,29 +961,52 @@ export function TeacherAssessmentsPanel({
                   <th className="pb-2 text-right">Grade Sheet</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="block space-y-3 md:table-row-group md:space-y-0 md:divide-y md:divide-slate-100">
                 {classStandings.map((row) => (
-                  <tr key={row.enrollmentId}>
-                    <td className="py-2.5 pr-3">
-                      <p className="font-semibold text-slate-900">
+                  <tr
+                    key={row.enrollmentId}
+                    className="grid grid-cols-2 gap-2.5 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm md:table-row md:rounded-none md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+                  >
+                    <td className="col-span-2 border-b border-slate-100 pb-2 md:table-cell md:border-0 md:py-2.5 md:pr-3">
+                      <p className="text-sm font-bold text-slate-900 md:text-xs md:font-semibold">
                         {row.student.fullName}
                       </p>
-                      <p className="text-[10px] text-slate-500">
+                      <p className="text-[11px] text-slate-500 md:text-[10px]">
                         {row.student.institutionalId ?? row.student.email}
                       </p>
                     </td>
-                    <td className="py-2.5 pr-3 font-mono font-semibold text-slate-800">
-                      {row.standing.overallPct !== null
-                        ? `${row.standing.overallPct.toFixed(2)}%`
-                        : "—"}
+                    <td className="col-span-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-mono font-semibold text-slate-800 md:table-cell md:rounded-none md:border-0 md:bg-transparent md:p-0 md:py-2.5 md:pr-3">
+                      <span
+                        aria-hidden="true"
+                        className="mb-0.5 block font-sans text-[10px] font-semibold uppercase tracking-wider text-slate-400 md:hidden"
+                      >
+                        Running %
+                      </span>
+                      <span>
+                        {row.standing.overallPct !== null
+                          ? `${row.standing.overallPct.toFixed(2)}%`
+                          : "—"}
+                      </span>
                     </td>
-                    <td className="py-2.5 pr-3 font-bold text-slate-900">
-                      {row.standing.effectiveGradeEquivalent ?? "—"}
+                    <td className="col-span-1 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2 font-bold text-slate-900 md:table-cell md:rounded-none md:border-0 md:bg-transparent md:p-0 md:py-2.5 md:pr-3">
+                      <span
+                        aria-hidden="true"
+                        className="mb-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-400 md:hidden"
+                      >
+                        Standing
+                      </span>
+                      <span>{row.standing.effectiveGradeEquivalent ?? "—"}</span>
                     </td>
-                    <td className="py-2.5 pr-3">
+                    <td className="col-span-2 flex items-center justify-between md:table-cell md:py-2.5 md:pr-3">
+                      <span
+                        aria-hidden="true"
+                        className="text-[11px] font-medium text-slate-500 md:hidden"
+                      >
+                        Status
+                      </span>
                       <span
                         className={cn(
-                          "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
                           row.standing.isOverridden
                             ? "bg-amber-50 text-amber-800"
                             : !row.standing.hasGradedItems
@@ -994,7 +1019,13 @@ export function TeacherAssessmentsPanel({
                         {row.standing.effectiveStatusLabel}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-3">
+                    <td className="col-span-2 md:table-cell md:py-2.5 md:pr-3">
+                      <span
+                        aria-hidden="true"
+                        className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500 md:hidden"
+                      >
+                        Manual Override
+                      </span>
                       <select
                         aria-label={`Standing override for ${row.student.fullName}`}
                         disabled={isArchived}
@@ -1005,14 +1036,14 @@ export function TeacherAssessmentsPanel({
                             e.target.value as "NONE" | "INC" | "DRP"
                           )
                         }
-                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                        className="w-full md:w-auto min-h-[38px] md:min-h-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 md:px-2 md:py-1 text-sm md:text-xs"
                       >
                         <option value="NONE">None (Computed)</option>
                         <option value="INC">INC (Incomplete)</option>
                         <option value="DRP">DRP (Dropped)</option>
                       </select>
                     </td>
-                    <td className="py-2.5 text-right">
+                    <td className="col-span-2 pt-1 md:table-cell md:pt-0 md:py-2.5 md:text-right">
                       <button
                         type="button"
                         aria-label={`Download grade sheet for ${row.student.fullName}`}
@@ -1020,9 +1051,9 @@ export function TeacherAssessmentsPanel({
                         onClick={() =>
                           void handleDownloadGradeSheet(row.enrollmentId)
                         }
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        className="w-full md:w-auto inline-flex items-center justify-center gap-1.5 min-h-[38px] md:min-h-0 rounded-xl md:rounded-lg border border-slate-200 bg-slate-50 md:bg-white px-3 md:px-2.5 py-1.5 md:py-1 text-xs md:text-[11px] font-semibold text-slate-700 hover:bg-slate-100 md:hover:bg-slate-50 disabled:opacity-50"
                       >
-                        <Download className="h-3 w-3" />
+                        <Download className="h-3.5 w-3.5 md:h-3 md:w-3" />
                         <span>
                           {downloadingTarget === row.enrollmentId
                             ? "Downloading..."

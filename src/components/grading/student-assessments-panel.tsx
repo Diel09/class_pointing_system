@@ -395,10 +395,10 @@ export function StudentAssessmentsPanel({
   }
 
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-indigo-600" />
+    <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-start sm:items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-indigo-600 mt-0.5 sm:mt-0 shrink-0" />
           <div>
             <h3 className="text-base font-bold text-slate-900">
               Assessments &amp; Recorded Scores
@@ -411,7 +411,7 @@ export function StudentAssessmentsPanel({
           </div>
         </div>
 
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-800">
+        <div className="self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-800 shrink-0">
           <Coins className="h-3.5 w-3.5 text-indigo-600" />
           <span>Available: {availableBalance} pts</span>
         </div>
@@ -526,10 +526,10 @@ export function StudentAssessmentsPanel({
                 : null;
 
             return (
-              <div key={item.id} className="p-4 space-y-3">
-                <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div key={item.id} className="p-3.5 sm:p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
                   <div className="space-y-1.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                       <span className="text-sm font-bold text-slate-900">
                         {item.title}
                       </span>
@@ -562,7 +562,7 @@ export function StudentAssessmentsPanel({
                       </p>
                     )}
 
-                    <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-500">
+                    <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-500">
                       <span>Max Score: {item.maxScore}</span>
                       {item.assessmentDate && (
                         <span>
@@ -583,158 +583,44 @@ export function StudentAssessmentsPanel({
                         </span>
                       )}
                     </div>
-
-                    {item.submissionEnabled && (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 space-y-1.5">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                            <Link2 className="h-3.5 w-3.5 text-indigo-600" />
-                            {item.mySubmission ? (
-                              <>
-                                <span
-                                  className={cn(
-                                    "rounded-full px-2 py-0.5 font-semibold border",
-                                    item.mySubmission.status === "LATE"
-                                      ? "bg-amber-50 text-amber-800 border-amber-200"
-                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                  )}
-                                >
-                                  {item.mySubmission.status === "LATE"
-                                    ? "Submitted (Late)"
-                                    : "Submitted"}
-                                </span>
-                                <a
-                                  href={item.mySubmission.normalizedUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
-                                >
-                                  <span>View Submitted Drive Link</span>
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                                {item.mySubmission.accessStatus ===
-                                  "UNVERIFIED" && (
-                                  <span className="rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">
-                                    Access unverified
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="font-medium text-slate-600">
-                                Google Drive link required (not submitted yet)
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {canSubmitLink && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  isSubmissionOpen
-                                    ? setSubmittingAssessmentId(null)
-                                    : openSubmissionForm(item)
-                                }
-                                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
-                              >
-                                <Link2 className="h-3 w-3" />
-                                <span>
-                                  {isSubmissionOpen
-                                    ? "Close"
-                                    : item.mySubmission
-                                    ? "Update Link"
-                                    : "Submit Drive Link"}
-                                </span>
-                              </button>
-                            )}
-                            {canSubmitLink && item.mySubmission && (
-                              <button
-                                type="button"
-                                disabled={withdrawingSubmissionId === item.id}
-                                onClick={() =>
-                                  void handleWithdrawSubmission(item)
-                                }
-                                aria-label={`Withdraw submission for ${item.title}`}
-                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                <span>
-                                  {withdrawingSubmissionId === item.id
-                                    ? "..."
-                                    : "Withdraw"}
-                                </span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {item.mySubmission && (
-                          <p className="text-[10px] text-slate-500">
-                            Updated{" "}
-                            {new Date(
-                              item.mySubmission.updatedAt
-                            ).toLocaleString()}
-                            {item.mySubmission.studentNote
-                              ? ` • Note: ${item.mySubmission.studentNote}`
-                              : ""}
-                          </p>
-                        )}
-                        {!canSubmitLink && isScoreLocked && (
-                          <p className="text-[10px] text-slate-500">
-                            Submission locked because this assessment has been
-                            graded.
-                          </p>
-                        )}
-                        {!canSubmitLink && !isScoreLocked && isHardClosed && (
-                          <p className="text-[10px] text-rose-700">
-                            Submission deadline passed and late submissions are
-                            closed.
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {item.myScore.remarks && (
-                      <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
-                        Teacher remarks: {item.myScore.remarks}
-                      </p>
-                    )}
                   </div>
 
-                  <div className="text-right shrink-0 space-y-1">
-                    {item.myScore.status === "GRADED" ? (
-                      <>
-                        <p className="text-lg font-extrabold text-slate-900">
-                          {item.myScore.effectiveScore} / {item.maxScore}
-                        </p>
-                        {hasBoost && (
-                          <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700">
-                            <Sparkles className="h-3 w-3" />
-                            <span>
-                              {item.myScore.rawScore ?? 0} +{" "}
-                              {item.myScore.bonusPoints} boost
-                            </span>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-2.5 sm:block sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:text-right sm:shrink-0 sm:space-y-1">
+                    <div className="space-y-0.5">
+                      {item.myScore.status === "GRADED" ? (
+                        <>
+                          <p className="text-lg font-extrabold text-slate-900 leading-tight">
+                            {item.myScore.effectiveScore} / {item.maxScore}
                           </p>
-                        )}
-                      </>
-                    ) : item.myScore.status === "MISSING" ? (
-                      <p className="text-lg font-extrabold text-rose-700">
-                        0 / {item.maxScore}
-                      </p>
-                    ) : (
-                      <p className="text-sm font-semibold text-slate-500">
-                        — / {item.maxScore}
-                      </p>
-                    )}
-                    {item.myScore.status !== "GRADED" && hasBoost && (
-                      <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700">
-                        <Sparkles className="h-3 w-3" />
-                        <span>+{item.myScore.bonusPoints} boost banked</span>
-                      </p>
-                    )}
+                          {hasBoost && (
+                            <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700">
+                              <Sparkles className="h-3 w-3" />
+                              <span>
+                                {item.myScore.rawScore ?? 0} +{" "}
+                                {item.myScore.bonusPoints} boost
+                              </span>
+                            </p>
+                          )}
+                        </>
+                      ) : item.myScore.status === "MISSING" ? (
+                        <p className="text-lg font-extrabold text-rose-700 leading-tight">
+                          0 / {item.maxScore}
+                        </p>
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-500">
+                          — / {item.maxScore}
+                        </p>
+                      )}
+                      {item.myScore.status !== "GRADED" && hasBoost && (
+                        <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700">
+                          <Sparkles className="h-3 w-3" />
+                          <span>+{item.myScore.bonusPoints} boost banked</span>
+                        </p>
+                      )}
+                    </div>
 
                     {canBoost && (
-                      <div className="pt-1">
+                      <div className="sm:pt-1 shrink-0">
                         <button
                           type="button"
                           onClick={() =>
@@ -742,7 +628,7 @@ export function StudentAssessmentsPanel({
                               ? setBoostingAssessmentId(null)
                               : openBoostForm(item)
                           }
-                          className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                          className="inline-flex items-center justify-center gap-1 min-h-[36px] sm:min-h-0 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 sm:px-2.5 sm:py-1 text-xs sm:text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
                         >
                           <Sparkles className="h-3 w-3" />
                           <span>
@@ -756,10 +642,126 @@ export function StudentAssessmentsPanel({
                   </div>
                 </div>
 
+                {item.submissionEnabled && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs sm:text-[11px]">
+                        <Link2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                        {item.mySubmission ? (
+                          <>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 font-semibold border text-[11px]",
+                                item.mySubmission.status === "LATE"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              )}
+                            >
+                              {item.mySubmission.status === "LATE"
+                                ? "Submitted (Late)"
+                                : "Submitted"}
+                            </span>
+                            <a
+                              href={item.mySubmission.normalizedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
+                            >
+                              <span>View Submitted Drive Link</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                            {item.mySubmission.accessStatus ===
+                              "UNVERIFIED" && (
+                              <span className="rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">
+                                Access unverified
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="font-medium text-slate-600">
+                            Google Drive link required (not submitted yet)
+                          </span>
+                        )}
+                      </div>
+
+                      {canSubmitLink && (
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              isSubmissionOpen
+                                ? setSubmittingAssessmentId(null)
+                                : openSubmissionForm(item)
+                            }
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1 min-h-[36px] sm:min-h-0 rounded-lg border border-indigo-200 bg-white px-3 sm:px-2.5 py-1.5 sm:py-1 text-xs sm:text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            <Link2 className="h-3 w-3" />
+                            <span>
+                              {isSubmissionOpen
+                                ? "Close"
+                                : item.mySubmission
+                                ? "Update Link"
+                                : "Submit Drive Link"}
+                            </span>
+                          </button>
+                          {item.mySubmission && (
+                            <button
+                              type="button"
+                              disabled={withdrawingSubmissionId === item.id}
+                              onClick={() =>
+                                void handleWithdrawSubmission(item)
+                              }
+                              aria-label={`Withdraw submission for ${item.title}`}
+                              className="inline-flex items-center justify-center gap-1 min-h-[36px] sm:min-h-0 rounded-lg border border-rose-200 bg-white px-3 sm:px-2 py-1.5 sm:py-1 text-xs sm:text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>
+                                {withdrawingSubmissionId === item.id
+                                  ? "..."
+                                  : "Withdraw"}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {item.mySubmission && (
+                      <p className="text-[11px] sm:text-[10px] text-slate-500">
+                        Updated{" "}
+                        {new Date(
+                          item.mySubmission.updatedAt
+                        ).toLocaleString()}
+                        {item.mySubmission.studentNote
+                          ? ` • Note: ${item.mySubmission.studentNote}`
+                          : ""}
+                      </p>
+                    )}
+                    {!canSubmitLink && isScoreLocked && (
+                      <p className="text-[11px] sm:text-[10px] text-slate-500">
+                        Submission locked because this assessment has been
+                        graded.
+                      </p>
+                    )}
+                    {!canSubmitLink && !isScoreLocked && isHardClosed && (
+                      <p className="text-[11px] sm:text-[10px] text-rose-700">
+                        Submission deadline passed and late submissions are
+                        closed.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {item.myScore.remarks && (
+                  <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                    Teacher remarks: {item.myScore.remarks}
+                  </p>
+                )}
+
                 {isSubmissionOpen && canSubmitLink && (
                   <form
                     onSubmit={(e) => void handleSaveSubmission(e, item)}
-                    className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3.5 space-y-2.5"
+                    className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3.5 space-y-3"
                   >
                     <p className="text-[11px] text-slate-600">
                       {item.requirePublicLink !== false
@@ -781,7 +783,7 @@ export function StudentAssessmentsPanel({
                           placeholder="https://drive.google.com/file/d/.../view"
                           value={driveUrlInput}
                           onChange={(e) => setDriveUrlInput(e.target.value)}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm sm:text-xs"
                         />
                       </div>
                       <div className="space-y-1">
@@ -800,7 +802,7 @@ export function StudentAssessmentsPanel({
                           onChange={(e) =>
                             setSubmissionNoteInput(e.target.value)
                           }
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm sm:text-xs"
                         />
                       </div>
                     </div>
@@ -818,7 +820,7 @@ export function StudentAssessmentsPanel({
                       <button
                         type="submit"
                         disabled={!isOnline || savingSubmission}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                       >
                         <Link2 className="h-3.5 w-3.5" />
                         <span>
@@ -856,7 +858,7 @@ export function StudentAssessmentsPanel({
                             setUnits(1);
                             setBoostError(null);
                           }}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-sm sm:text-xs"
                         >
                           {eligibleRewards.map((r) => (
                             <option key={r.id} value={r.id}>
@@ -877,6 +879,7 @@ export function StudentAssessmentsPanel({
                         <input
                           id={`boost-units-${item.id}`}
                           type="number"
+                          inputMode="numeric"
                           min={1}
                           max={maxUnitsByBoostCap}
                           required
@@ -892,7 +895,7 @@ export function StudentAssessmentsPanel({
                               )
                             )
                           }
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm sm:text-xs"
                         />
                       </div>
 
@@ -910,7 +913,7 @@ export function StudentAssessmentsPanel({
                           placeholder="Optional note for teacher..."
                           value={studentNote}
                           onChange={(e) => setStudentNote(e.target.value)}
-                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm sm:text-xs"
                         />
                       </div>
                     </div>
@@ -924,7 +927,7 @@ export function StudentAssessmentsPanel({
                       </p>
                     )}
 
-                    <div className="flex items-center justify-between gap-3 flex-wrap text-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
                       <div className="space-y-0.5 text-slate-600">
                         <p>
                           Cost:{" "}
@@ -951,7 +954,7 @@ export function StudentAssessmentsPanel({
                           totalCost <= 0 ||
                           availableBalance < totalCost
                         }
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         <span>

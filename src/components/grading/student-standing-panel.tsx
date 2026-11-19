@@ -88,8 +88,8 @@ export function StudentStandingPanel({ subjectId }: StudentStandingPanelProps) {
     : "bg-rose-50 text-rose-700 border-rose-200";
 
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <section className="rounded-2xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Award className="h-4 w-4 text-indigo-600" />
@@ -103,8 +103,8 @@ export function StudentStandingPanel({ subjectId }: StudentStandingPanelProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="text-right">
+        <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto rounded-xl bg-slate-50 border border-slate-200/80 p-3 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0">
+          <div className="text-left sm:text-right">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Running %
             </p>
