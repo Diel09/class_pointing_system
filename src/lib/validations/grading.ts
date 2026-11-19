@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { round2 } from "@/lib/grading/computeStanding";
 import type { GradeScaleRuleInput } from "@/lib/grading/default-scale";
+import { parseGoogleDriveUrl } from "@/lib/submissions/google-drive-link";
 
 export const termSplitEntrySchema = z.object({
   key: z
@@ -331,6 +332,10 @@ export const createAssessmentSchema = z.object({
     .positive("Max score must be greater than 0.")
     .max(10_000, "Max score cannot exceed 10,000."),
   assessmentDate: z.string().datetime().optional().nullable(),
+  submissionEnabled: z.boolean().optional().default(false),
+  dueAt: z.string().datetime().optional().nullable(),
+  allowLateSubmissions: z.boolean().optional().default(true),
+  requirePublicLink: z.boolean().optional().default(true),
 });
 
 export const updateAssessmentSchema = z
@@ -340,9 +345,38 @@ export const updateAssessmentSchema = z
     description: z.string().trim().max(1000).optional().nullable(),
     maxScore: z.number().positive().max(10_000).optional(),
     assessmentDate: z.string().datetime().optional().nullable(),
+    submissionEnabled: z.boolean().optional(),
+    dueAt: z.string().datetime().optional().nullable(),
+    allowLateSubmissions: z.boolean().optional(),
+    requirePublicLink: z.boolean().optional(),
   })
   .refine((val) => Object.keys(val).length > 0, {
     message: "Provide at least one assessment field to update.",
+  });
+
+export const submitDriveLinkSchema = z
+  .object({
+    driveUrl: z
+      .string()
+      .trim()
+      .min(1, "Please enter a Google Drive link.")
+      .max(2048, "Google Drive link is too long."),
+    studentNote: z
+      .string()
+      .trim()
+      .max(500, "Note must be 500 characters or fewer.")
+      .optional()
+      .nullable(),
+  })
+  .superRefine((val, ctx) => {
+    const parsed = parseGoogleDriveUrl(val.driveUrl);
+    if (!parsed.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["driveUrl"],
+        message: parsed.error,
+      });
+    }
   });
 
 export const scoreEntryInputSchema = z

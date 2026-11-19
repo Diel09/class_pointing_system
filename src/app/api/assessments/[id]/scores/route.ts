@@ -67,7 +67,7 @@ export async function GET(
   const { assessment } = owner.data;
   const maxScore = Number(assessment.maxScore);
 
-  const [enrollments, existingScores] = await Promise.all([
+  const [enrollments, existingScores, existingSubmissions] = await Promise.all([
     db.subjectEnrollment.findMany({
       where: { subjectId: assessment.subjectId },
       orderBy: { student: { fullName: "asc" } },
@@ -87,14 +87,23 @@ export async function GET(
     db.assessmentScore.findMany({
       where: { assessmentId: id },
     }),
+    typeof db.assessmentSubmission?.findMany === "function"
+      ? db.assessmentSubmission.findMany({
+          where: { assessmentId: id },
+        })
+      : Promise.resolve([]),
   ]);
 
   const scoreByEnrollment = new Map(
     existingScores.map((s) => [s.enrollmentId, s])
   );
+  const submissionByEnrollment = new Map(
+    existingSubmissions.map((sub) => [sub.enrollmentId, sub])
+  );
 
   const rows = enrollments.map((enrollment) => {
     const score = scoreByEnrollment.get(enrollment.id);
+    const submission = submissionByEnrollment.get(enrollment.id);
     const status = score?.status ?? "PENDING";
     const rawScore =
       score && score.rawScore !== null ? Number(score.rawScore) : null;
@@ -122,6 +131,17 @@ export async function GET(
       effectiveScore,
       remarks: score?.remarks ?? null,
       updatedAt: score?.updatedAt ?? null,
+      submission: submission
+        ? {
+            id: submission.id,
+            normalizedUrl: submission.normalizedUrl,
+            status: submission.status,
+            accessStatus: submission.accessStatus,
+            studentNote: submission.studentNote,
+            submittedAt: submission.submittedAt,
+            updatedAt: submission.updatedAt,
+          }
+        : null,
     };
   });
 
@@ -135,6 +155,10 @@ export async function GET(
       description: assessment.description,
       maxScore,
       assessmentDate: assessment.assessmentDate,
+      submissionEnabled: Boolean(assessment.submissionEnabled),
+      dueAt: assessment.dueAt ?? null,
+      allowLateSubmissions: assessment.allowLateSubmissions ?? true,
+      requirePublicLink: assessment.requirePublicLink ?? true,
     },
     rows,
   });

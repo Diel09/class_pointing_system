@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar,
   Edit3,
+  ExternalLink,
   FileSpreadsheet,
   Save,
   Search,
@@ -26,6 +27,20 @@ export interface AssessmentScoreDetailDto {
   description: string | null;
   maxScore: number;
   assessmentDate: string | null;
+  submissionEnabled?: boolean;
+  dueAt?: string | null;
+  allowLateSubmissions?: boolean;
+  requirePublicLink?: boolean;
+}
+
+export interface ScoreGridSubmissionDto {
+  id: string;
+  normalizedUrl: string;
+  status: "SUBMITTED" | "LATE";
+  accessStatus: "PUBLIC_VERIFIED" | "UNVERIFIED" | "PRIVATE_OR_RESTRICTED";
+  studentNote: string | null;
+  submittedAt: string;
+  updatedAt: string;
 }
 
 export interface ScoreGridRow {
@@ -43,6 +58,7 @@ export interface ScoreGridRow {
   allowExtraCredit: boolean;
   effectiveScore: number | null;
   remarks: string | null;
+  submission?: ScoreGridSubmissionDto | null;
 }
 
 interface ScoreDraft {
@@ -367,6 +383,14 @@ export function AssessmentGradingGrid({
               • {gradedCount} graded • {pendingCount} pending • {missingCount}{" "}
               missing
             </span>
+            {assessment.submissionEnabled && (
+              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                Drive Links Enabled
+                {assessment.dueAt
+                  ? ` (Due ${new Date(assessment.dueAt).toLocaleString()})`
+                  : ""}
+              </span>
+            )}
           </div>
           {assessment.description && (
             <p className="text-xs text-slate-600">{assessment.description}</p>
@@ -470,6 +494,9 @@ export function AssessmentGradingGrid({
               <thead>
                 <tr className="border-b border-slate-200 text-[11px] text-slate-500">
                   <th className="pb-2 pr-3">Student</th>
+                  {assessment.submissionEnabled && (
+                    <th className="pb-2 pr-3">Drive Submission</th>
+                  )}
                   <th className="pb-2 pr-3">Status</th>
                   <th className="pb-2 pr-3">Raw Score</th>
                   <th className="pb-2 pr-3">Boost</th>
@@ -481,7 +508,7 @@ export function AssessmentGradingGrid({
                 {filteredScoreRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={assessment.submissionEnabled ? 7 : 6}
                       className="py-4 text-center text-xs text-slate-500"
                     >
                       No enrolled students match &ldquo;{studentQuery}&rdquo;.
@@ -525,6 +552,62 @@ export function AssessmentGradingGrid({
                             {row.student.institutionalId ?? row.student.email}
                           </p>
                         </td>
+                        {assessment.submissionEnabled && (
+                          <td className="py-2.5 pr-3">
+                            {row.submission ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <a
+                                    href={row.submission.normalizedUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                                  >
+                                    <span>Open Drive</span>
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                  <span
+                                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                      row.submission.status === "LATE"
+                                        ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    }`}
+                                  >
+                                    {row.submission.status === "LATE"
+                                      ? "Late"
+                                      : "On time"}
+                                  </span>
+                                  {row.submission.accessStatus ===
+                                    "UNVERIFIED" && (
+                                    <span className="rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                                      Unverified
+                                    </span>
+                                  )}
+                                  {row.submission.accessStatus ===
+                                    "PRIVATE_OR_RESTRICTED" && (
+                                    <span className="rounded-full bg-slate-100 border border-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                                      School/Restricted
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                  {new Date(
+                                    row.submission.updatedAt
+                                  ).toLocaleString()}
+                                </p>
+                                {row.submission.studentNote && (
+                                  <p className="text-[10px] text-slate-600 max-w-[200px] truncate">
+                                    Note: {row.submission.studentNote}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">
+                                Not submitted
+                              </span>
+                            )}
+                          </td>
+                        )}
                         <td className="py-2.5 pr-3">
                           <select
                             aria-label={`Status for ${row.student.fullName}`}

@@ -14,7 +14,7 @@ The **Location-Verified Attendance, Gamified Pointing & Class Standing System** 
 It combines:
 1. **Fraud-resistant attendance** using dynamic QR codes and teacher-device geofencing.
 2. **A per-subject gamified economy** where students earn points from attendance and teacher merits, lose points via demerits, share points peer-to-peer via GCash-style QR transfers, and spend points (with teacher approval) on score boosts or classroom perks.
-3. **Streamlined gradebook & class standing tracking** where teachers create assessments, input scores without managing student file submissions, define custom subject computation formulas, and publish live class standings mapped to configurable grade equivalents (e.g., `1.00`, `1.25`, `1.50`, ..., `5.00`).
+3. **Streamlined gradebook & class standing tracking** where teachers create assessments (optionally accepting Google Drive link submissions with zero server file storage), input scores, define custom subject computation formulas, and publish live class standings mapped to configurable grade equivalents (e.g., `1.00`, `1.25`, `1.50`, ..., `5.00`).
 
 ---
 
@@ -25,7 +25,7 @@ It combines:
 | **Platform** | Mobile-first Progressive Web App (PWA) installable on smartphones and accessible via desktop browsers. |
 | **Per-Subject Point Isolation** | Every subject/class maintains its own **isolated point wallet**, reward catalog, transfer settings, computation rules, and grading scale. Points earned in Subject A **cannot** be spent or transferred in Subject B. |
 | **Teacher-Led Onboarding** | Teachers self-manage their subjects and student rosters (via class code, QR invite, or manual/CSV enrollment), supported by a lightweight Admin role for institutional oversight and academic term management. |
-| **Zero Student Submissions** | Assessments/activities serve solely as teacher-scored records; students **cannot** upload files, submit links, or turn in work through the platform. |
+| **Zero Binary File Storage** | Assessments default to teacher-scored records with no file uploads; when enabled by a teacher, students submit **Google Drive links only** (validated for public access), keeping Supabase Storage and egress at 0 bytes. |
 | **Privacy-First Geolocation** | GPS coordinates are captured **only on-demand** (when a teacher runs an attendance session or when a student scans an attendance QR). No continuous background location tracking occurs. |
 
 ---
@@ -39,7 +39,7 @@ It combines:
 - View per-subject point balance (Available vs. Pending/Escrowed) and full immutable point transaction ledger.
 - Receive points from or send points to classmates **within the same subject** via GCash-style QR codes.
 - Browse the subject's reward catalog and submit point redemption requests (specifying the target exam/activity or custom usage).
-- View read-only assignment/activity/exam details, raw scores, applied point bonuses, and teacher remarks.
+- View assignment/activity/exam details, raw scores, applied point bonuses, teacher remarks, and submit/update Google Drive links on activities where submissions are enabled.
 - View live running class standing (percentage breakdown and grade equivalent such as `1.00`, `1.25`) when grade visibility is enabled by the teacher.
 
 ### 3.2 Teacher
@@ -173,8 +173,8 @@ It combines:
 
 ---
 
-### 4.5 Assessments & Teacher-Only Score Entry
-**Goal:** Provide a clean assessment tracker where teachers record scores without handling student file uploads or submissions.
+### 4.5 Assessments, Optional Google Drive Submissions & Score Entry
+**Goal:** Provide a clean assessment tracker where teachers record scores and optionally collect verified Google Drive links without storing student files on the server.
 
 1. **Assessment Creation (Teacher):**
    - Teachers create assessments under a subject, specifying:
@@ -183,9 +183,10 @@ It combines:
      - **Term / Period** (if the subject uses term splits such as Midterm & Finals).
      - **Max Score** (e.g., `20`, `50`, `100`).
      - **Date / Reference Description** (optional instructions or topics covered for student reference).
-2. **Strict No-Submission Rule (Student):**
+     - **Google Drive Link Submissions (Optional):** Teachers can enable Google Drive link submissions, set an optional deadline (`dueAt`), choose whether late submissions are allowed, and toggle the `"Anyone with the link"` public access check (can be turned off for school-restricted Google Workspace accounts).
+2. **Student Assessment & Drive Link Submission:**
    - Students can view the assessment list, instructions/description, `max_score`, their recorded score, any applied point boost, and teacher feedback/remarks.
-   - There is **no file upload, text submission box, link attachment, or "Turn In" action** anywhere in the student assessment interface.
+   - There are **zero file uploads** on the platform. When `submissionEnabled` is turned on for an activity, students can submit, update, or withdraw a **Google Drive / Google Docs link** while their score is `Pending` (and before hard deadline closure); links are locked once graded or excused.
 3. **Score Input & Grading Statuses (Teacher):**
    - Teachers enter scores via individual student view or a fast spreadsheet-like **Class Score Grid** (and optional CSV score import).
    - Each student's record for an assessment has an explicit status:

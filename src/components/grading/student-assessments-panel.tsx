@@ -6,8 +6,11 @@ import {
   ClipboardList,
   Clock,
   Coins,
+  ExternalLink,
+  Link2,
   MinusCircle,
   Sparkles,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
@@ -15,6 +18,19 @@ import { OfflineBanner } from "@/components/pwa/offline-banner";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { round2 } from "@/lib/grading/computeStanding";
 import { cn } from "@/lib/utils";
+
+export interface StudentSubmissionDto {
+  id: string;
+  driveUrl: string;
+  normalizedUrl: string;
+  driveResourceId: string | null;
+  status: "SUBMITTED" | "LATE";
+  accessStatus: "PUBLIC_VERIFIED" | "UNVERIFIED" | "PRIVATE_OR_RESTRICTED";
+  accessCheckedAt: string | null;
+  studentNote: string | null;
+  submittedAt: string;
+  updatedAt: string;
+}
 
 export interface StudentAssessmentDto {
   id: string;
@@ -30,6 +46,11 @@ export interface StudentAssessmentDto {
   description: string | null;
   maxScore: number;
   assessmentDate: string | null;
+  submissionEnabled?: boolean;
+  dueAt?: string | null;
+  allowLateSubmissions?: boolean;
+  requirePublicLink?: boolean;
+  mySubmission?: StudentSubmissionDto | null;
   pendingBoost?: {
     count: number;
     totalBoost: number;
@@ -94,8 +115,9 @@ function getScoreBadge(status: StudentAssessmentDto["myScore"]["status"]) {
 }
 
 /**
- * Strictly read-only student assessment view (zero file uploads or score edits);
- * students may only view scores and spend points on eligible Score Boost rewards.
+ * Student assessment view: displays recorded scores, supports Google Drive link
+ * submissions on enabled activities (with zero file uploads), and lets students
+ * spend points on eligible Score Boost rewards.
  */
 export function StudentAssessmentsPanel({
   subjectId,
@@ -113,6 +135,20 @@ export function StudentAssessmentsPanel({
   const [submittingBoost, setSubmittingBoost] = useState(false);
   const [boostError, setBoostError] = useState<string | null>(null);
   const [boostSuccess, setBoostSuccess] = useState<string | null>(null);
+
+  const [submittingAssessmentId, setSubmittingAssessmentId] = useState<
+    string | null
+  >(null);
+  const [driveUrlInput, setDriveUrlInput] = useState("");
+  const [submissionNoteInput, setSubmissionNoteInput] = useState("");
+  const [savingSubmission, setSavingSubmission] = useState(false);
+  const [withdrawingSubmissionId, setWithdrawingSubmissionId] = useState<
+    string | null
+  >(null);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [submissionSuccess, setSubmissionSuccess] = useState<string | null>(
+    null
+  );
 
   const { data, isLoading, error } = useQuery<{
     assessments: StudentAssessmentDto[];
@@ -257,6 +293,107 @@ export function StudentAssessmentsPanel({
     }
   }
 
+  function openSubmissionForm(item: StudentAssessmentDto) {
+    setSubmittingAssessmentId(item.id);
+    setDriveUrlInput(item.mySubmission?.driveUrl ?? "");
+    setSubmissionNoteInput(item.mySubmission?.studentNote ?? "");
+    setSubmissionError(null);
+    setSubmissionSuccess(null);
+  }
+
+  async function handleSaveSubmission(
+    event: FormEvent<HTMLFormElement>,
+    item: StudentAssessmentDto
+  ) {
+    event.preventDefault();
+    if (!navigator.onLine) {
+      setSubmissionError(
+        "Internet connection required to submit your Google Drive link. Reconnect and try again."
+      );
+      return;
+    }
+
+    setSavingSubmission(true);
+    setSubmissionError(null);
+    setSubmissionSuccess(null);
+
+    try {
+      const res = await fetch(`/api/assessments/${item.id}/submission`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          driveUrl: driveUrlInput.trim(),
+          studentNote: submissionNoteInput.trim() || null,
+        }),
+      });
+      const payload = (await res.json()) as {
+        error?: string;
+        submission?: StudentSubmissionDto;
+        accessWarning?: string | null;
+      };
+      if (!res.ok || !payload.submission) {
+        setSubmissionError(
+          payload.error ?? "Unable to save Google Drive link."
+        );
+        return;
+      }
+
+      setSubmittingAssessmentId(null);
+      setDriveUrlInput("");
+      setSubmissionNoteInput("");
+      setSubmissionSuccess(
+        payload.accessWarning
+          ? `Saved Google Drive link for "${item.title}". Note: ${payload.accessWarning}`
+          : `Google Drive link submitted for "${item.title}".`
+      );
+      await queryClient.invalidateQueries({
+        queryKey: ["subject-assessments", subjectId],
+      });
+    } catch {
+      setSubmissionError("Network error while saving Google Drive link.");
+    } finally {
+      setSavingSubmission(false);
+    }
+  }
+
+  async function handleWithdrawSubmission(item: StudentAssessmentDto) {
+    if (!navigator.onLine) {
+      setSubmissionError(
+        "Internet connection required to withdraw your submission."
+      );
+      return;
+    }
+
+    setWithdrawingSubmissionId(item.id);
+    setSubmissionError(null);
+    setSubmissionSuccess(null);
+
+    try {
+      const res = await fetch(`/api/assessments/${item.id}/submission`, {
+        method: "DELETE",
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        setSubmissionError(payload.error ?? "Unable to withdraw submission.");
+        return;
+      }
+
+      if (submittingAssessmentId === item.id) {
+        setSubmittingAssessmentId(null);
+      }
+      setSubmissionSuccess(`Withdrew Google Drive link for "${item.title}".`);
+      await queryClient.invalidateQueries({
+        queryKey: ["subject-assessments", subjectId],
+      });
+    } catch {
+      setSubmissionError("Network error while withdrawing submission.");
+    } finally {
+      setWithdrawingSubmissionId(null);
+    }
+  }
+
   return (
     <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -267,8 +404,9 @@ export function StudentAssessmentsPanel({
               Assessments &amp; Recorded Scores
             </h3>
             <p className="text-xs text-slate-500">
-              View your teacher-recorded scores or spend points to boost an
-              eligible assessment. No uploads or score edits are allowed.
+              View your teacher-recorded scores, submit Google Drive links on
+              enabled activities, or spend points to boost an eligible
+              assessment.
             </p>
           </div>
         </div>
@@ -279,8 +417,17 @@ export function StudentAssessmentsPanel({
         </div>
       </div>
 
-      {!isOnline && boostingAssessmentId && (
-        <OfflineBanner message="Internet connection required to spend points for a score boost." />
+      {!isOnline && (boostingAssessmentId || submittingAssessmentId) && (
+        <OfflineBanner message="Internet connection required to submit updates." />
+      )}
+
+      {submissionSuccess && (
+        <p
+          role="status"
+          className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800"
+        >
+          {submissionSuccess}
+        </p>
       )}
 
       {boostSuccess && (
@@ -327,6 +474,19 @@ export function StudentAssessmentsPanel({
               !alreadyMaxedWithoutExtraCredit;
 
             const isBoostOpen = boostingAssessmentId === item.id;
+            const isSubmissionOpen = submittingAssessmentId === item.id;
+            const isScoreLocked =
+              item.myScore.status === "GRADED" ||
+              item.myScore.status === "EXCUSED";
+            const isPastDue = Boolean(
+              item.dueAt && Date.now() > new Date(item.dueAt).getTime()
+            );
+            const isHardClosed = isPastDue && item.allowLateSubmissions === false;
+            const canSubmitLink =
+              Boolean(item.submissionEnabled) &&
+              !isArchived &&
+              !isScoreLocked &&
+              !isHardClosed;
             const activeReward =
               eligibleRewards.find((r) => r.id === selectedRewardId) ??
               eligibleRewards[0] ??
@@ -410,7 +570,129 @@ export function StudentAssessmentsPanel({
                           {new Date(item.assessmentDate).toLocaleDateString()}
                         </span>
                       )}
+                      {item.submissionEnabled && item.dueAt && (
+                        <span
+                          className={
+                            isPastDue ? "text-rose-700 font-medium" : ""
+                          }
+                        >
+                          Due: {new Date(item.dueAt).toLocaleString()}
+                          {isPastDue && item.allowLateSubmissions === false
+                            ? " (Closed)"
+                            : ""}
+                        </span>
+                      )}
                     </div>
+
+                    {item.submissionEnabled && (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                            <Link2 className="h-3.5 w-3.5 text-indigo-600" />
+                            {item.mySubmission ? (
+                              <>
+                                <span
+                                  className={cn(
+                                    "rounded-full px-2 py-0.5 font-semibold border",
+                                    item.mySubmission.status === "LATE"
+                                      ? "bg-amber-50 text-amber-800 border-amber-200"
+                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  )}
+                                >
+                                  {item.mySubmission.status === "LATE"
+                                    ? "Submitted (Late)"
+                                    : "Submitted"}
+                                </span>
+                                <a
+                                  href={item.mySubmission.normalizedUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
+                                >
+                                  <span>View Submitted Drive Link</span>
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                                {item.mySubmission.accessStatus ===
+                                  "UNVERIFIED" && (
+                                  <span className="rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">
+                                    Access unverified
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="font-medium text-slate-600">
+                                Google Drive link required (not submitted yet)
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {canSubmitLink && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isSubmissionOpen
+                                    ? setSubmittingAssessmentId(null)
+                                    : openSubmissionForm(item)
+                                }
+                                className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                              >
+                                <Link2 className="h-3 w-3" />
+                                <span>
+                                  {isSubmissionOpen
+                                    ? "Close"
+                                    : item.mySubmission
+                                    ? "Update Link"
+                                    : "Submit Drive Link"}
+                                </span>
+                              </button>
+                            )}
+                            {canSubmitLink && item.mySubmission && (
+                              <button
+                                type="button"
+                                disabled={withdrawingSubmissionId === item.id}
+                                onClick={() =>
+                                  void handleWithdrawSubmission(item)
+                                }
+                                aria-label={`Withdraw submission for ${item.title}`}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                                <span>
+                                  {withdrawingSubmissionId === item.id
+                                    ? "..."
+                                    : "Withdraw"}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {item.mySubmission && (
+                          <p className="text-[10px] text-slate-500">
+                            Updated{" "}
+                            {new Date(
+                              item.mySubmission.updatedAt
+                            ).toLocaleString()}
+                            {item.mySubmission.studentNote
+                              ? ` • Note: ${item.mySubmission.studentNote}`
+                              : ""}
+                          </p>
+                        )}
+                        {!canSubmitLink && isScoreLocked && (
+                          <p className="text-[10px] text-slate-500">
+                            Submission locked because this assessment has been
+                            graded.
+                          </p>
+                        )}
+                        {!canSubmitLink && !isScoreLocked && isHardClosed && (
+                          <p className="text-[10px] text-rose-700">
+                            Submission deadline passed and late submissions are
+                            closed.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {item.myScore.remarks && (
                       <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
@@ -473,6 +755,83 @@ export function StudentAssessmentsPanel({
                     )}
                   </div>
                 </div>
+
+                {isSubmissionOpen && canSubmitLink && (
+                  <form
+                    onSubmit={(e) => void handleSaveSubmission(e, item)}
+                    className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3.5 space-y-2.5"
+                  >
+                    <p className="text-[11px] text-slate-600">
+                      {item.requirePublicLink !== false
+                        ? "Upload your file to Google Drive → click Share → under General access select 'Anyone with the link' → paste the link below."
+                        : "Upload your file to Google Drive (school/restricted links are allowed for this activity) and paste the share link below."}
+                    </p>
+                    <div className="grid gap-2.5 sm:grid-cols-2">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor={`drive-url-${item.id}`}
+                          className="block text-[11px] font-semibold text-slate-700"
+                        >
+                          Google Drive Link
+                        </label>
+                        <input
+                          id={`drive-url-${item.id}`}
+                          type="url"
+                          required
+                          placeholder="https://drive.google.com/file/d/.../view"
+                          value={driveUrlInput}
+                          onChange={(e) => setDriveUrlInput(e.target.value)}
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor={`drive-note-${item.id}`}
+                          className="block text-[11px] font-semibold text-slate-700"
+                        >
+                          Note for Teacher (optional)
+                        </label>
+                        <input
+                          id={`drive-note-${item.id}`}
+                          type="text"
+                          maxLength={500}
+                          placeholder="Optional comment..."
+                          value={submissionNoteInput}
+                          onChange={(e) =>
+                            setSubmissionNoteInput(e.target.value)
+                          }
+                          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {submissionError && (
+                      <p
+                        role="alert"
+                        className="rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-xs text-rose-700"
+                      >
+                        {submissionError}
+                      </p>
+                    )}
+
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={!isOnline || savingSubmission}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                        <span>
+                          {savingSubmission
+                            ? "Verifying & Saving..."
+                            : item.mySubmission
+                            ? "Update Google Drive Link"
+                            : "Submit Google Drive Link"}
+                        </span>
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {isBoostOpen && activeReward && (
                   <form

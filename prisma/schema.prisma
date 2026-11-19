@@ -91,6 +91,17 @@ enum AssessmentScoreStatus {
   EXCUSED
 }
 
+enum SubmissionStatus {
+  SUBMITTED
+  LATE
+}
+
+enum LinkAccessStatus {
+  PUBLIC_VERIFIED
+  UNVERIFIED
+  PRIVATE_OR_RESTRICTED
+}
+
 model User {
   id              String     @id @default(uuid()) @db.Uuid
   email           String     @unique
@@ -212,10 +223,11 @@ model SubjectEnrollment {
 
   subject            Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   student            User                @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Cascade)
-  attendanceRecords  AttendanceRecord[]
-  ledgerEntries      PointLedgerEntry[]
-  redemptionRequests RedemptionRequest[]
-  assessmentScores   AssessmentScore[]
+  attendanceRecords     AttendanceRecord[]
+  ledgerEntries         PointLedgerEntry[]
+  redemptionRequests    RedemptionRequest[]
+  assessmentScores      AssessmentScore[]
+  assessmentSubmissions AssessmentSubmission[]
 
   @@unique([subjectId, studentId])
   @@index([studentId])
@@ -403,23 +415,49 @@ model GradeCategory {
 }
 
 model Assessment {
-  id             String    @id @default(uuid()) @db.Uuid
-  subjectId      String    @db.Uuid
-  categoryId     String    @db.Uuid
-  title          String
-  description    String?
-  maxScore       Decimal   @db.Decimal(8, 2)
-  assessmentDate DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                   String    @id @default(uuid()) @db.Uuid
+  subjectId            String    @db.Uuid
+  categoryId           String    @db.Uuid
+  title                String
+  description          String?
+  maxScore             Decimal   @db.Decimal(8, 2)
+  assessmentDate       DateTime?
+  submissionEnabled    Boolean   @default(false)
+  dueAt                DateTime?
+  allowLateSubmissions Boolean   @default(true)
+  requirePublicLink    Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  subject           Subject             @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  category          GradeCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subject           Subject                @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  category          GradeCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   scores            AssessmentScore[]
+  submissions       AssessmentSubmission[]
   redemptionTargets RedemptionRequest[]
 
   @@index([subjectId, categoryId])
   @@index([subjectId, assessmentDate])
+}
+
+model AssessmentSubmission {
+  id              String           @id @default(uuid()) @db.Uuid
+  assessmentId    String           @db.Uuid
+  enrollmentId    String           @db.Uuid
+  driveUrl        String
+  normalizedUrl   String
+  driveResourceId String?
+  status          SubmissionStatus @default(SUBMITTED)
+  accessStatus    LinkAccessStatus @default(PUBLIC_VERIFIED)
+  accessCheckedAt DateTime?
+  studentNote     String?
+  submittedAt     DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  assessment Assessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  enrollment SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, enrollmentId])
+  @@index([assessmentId, status])
 }
 
 model AssessmentScore {
@@ -468,6 +506,7 @@ enum NotificationType {
   REDEMPTION_REJECTED
   ASSESSMENT_POSTED
   SCORE_UPDATED
+  SUBMISSION_RECEIVED
   STUDENT_JOINED
 }
 

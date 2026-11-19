@@ -37,11 +37,20 @@ interface TeacherAssessmentDto {
   description: string | null;
   maxScore: number;
   assessmentDate: string | null;
+  submissionEnabled?: boolean;
+  dueAt?: string | null;
+  allowLateSubmissions?: boolean;
+  requirePublicLink?: boolean;
   scoreSummary?: {
     gradedCount: number;
     missingCount: number;
     excusedCount: number;
     pendingCount: number;
+    totalStudents: number;
+  };
+  submissionSummary?: {
+    totalSubmitted: number;
+    lateCount: number;
     totalStudents: number;
   };
 }
@@ -62,6 +71,16 @@ interface TeacherAssessmentsPanelProps {
   isArchived: boolean;
 }
 
+function toLocalDateTimeInputValue(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function TeacherAssessmentsPanel({
   subjectId,
   isArchived,
@@ -74,6 +93,10 @@ export function TeacherAssessmentsPanel({
   const [maxScore, setMaxScore] = useState(50);
   const [assessmentDate, setAssessmentDate] = useState("");
   const [description, setDescription] = useState("");
+  const [submissionEnabled, setSubmissionEnabled] = useState(false);
+  const [dueAtInput, setDueAtInput] = useState("");
+  const [allowLateSubmissions, setAllowLateSubmissions] = useState(true);
+  const [requirePublicLink, setRequirePublicLink] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [initializingCategories, setInitializingCategories] = useState(false);
@@ -89,6 +112,11 @@ export function TeacherAssessmentsPanel({
   const [editMaxScore, setEditMaxScore] = useState(50);
   const [editAssessmentDate, setEditAssessmentDate] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editSubmissionEnabled, setEditSubmissionEnabled] = useState(false);
+  const [editDueAtInput, setEditDueAtInput] = useState("");
+  const [editAllowLateSubmissions, setEditAllowLateSubmissions] =
+    useState(true);
+  const [editRequirePublicLink, setEditRequirePublicLink] = useState(true);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -198,6 +226,10 @@ export function TeacherAssessmentsPanel({
         : ""
     );
     setEditDescription(assessment.description ?? "");
+    setEditSubmissionEnabled(Boolean(assessment.submissionEnabled));
+    setEditDueAtInput(toLocalDateTimeInputValue(assessment.dueAt));
+    setEditAllowLateSubmissions(assessment.allowLateSubmissions ?? true);
+    setEditRequirePublicLink(assessment.requirePublicLink ?? true);
     setEditError(null);
   }
 
@@ -218,6 +250,13 @@ export function TeacherAssessmentsPanel({
           assessmentDate: editAssessmentDate
             ? new Date(`${editAssessmentDate}T00:00:00.000Z`).toISOString()
             : null,
+          submissionEnabled: editSubmissionEnabled,
+          dueAt:
+            editSubmissionEnabled && editDueAtInput
+              ? new Date(editDueAtInput).toISOString()
+              : null,
+          allowLateSubmissions: editAllowLateSubmissions,
+          requirePublicLink: editRequirePublicLink,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -265,6 +304,13 @@ export function TeacherAssessmentsPanel({
           assessmentDate: assessmentDate
             ? new Date(`${assessmentDate}T00:00:00.000Z`).toISOString()
             : null,
+          submissionEnabled,
+          dueAt:
+            submissionEnabled && dueAtInput
+              ? new Date(dueAtInput).toISOString()
+              : null,
+          allowLateSubmissions,
+          requirePublicLink,
         }),
       });
       const data = (await res.json()) as {
@@ -278,6 +324,10 @@ export function TeacherAssessmentsPanel({
       setTitle("");
       setDescription("");
       setAssessmentDate("");
+      setSubmissionEnabled(false);
+      setDueAtInput("");
+      setAllowLateSubmissions(true);
+      setRequirePublicLink(true);
       setShowCreateForm(false);
       setHighlightedAssessmentId(data.assessment.id);
       await Promise.all([
@@ -536,6 +586,72 @@ export function TeacherAssessmentsPanel({
                 />
               </div>
 
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2.5">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                  <input
+                    id="assessment-submission-enabled"
+                    type="checkbox"
+                    checked={submissionEnabled}
+                    onChange={(e) => setSubmissionEnabled(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                  />
+                  <span>Allow Google Drive link submissions</span>
+                </label>
+
+                {submissionEnabled && (
+                  <div className="space-y-2.5 pl-5 pt-1 border-t border-slate-100">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="assessment-due-at"
+                        className="block text-[11px] font-medium text-slate-600"
+                      >
+                        Submission Deadline (optional)
+                      </label>
+                      <input
+                        id="assessment-due-at"
+                        type="datetime-local"
+                        value={dueAtInput}
+                        onChange={(e) => setDueAtInput(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                      <input
+                        id="assessment-allow-late"
+                        type="checkbox"
+                        checked={allowLateSubmissions}
+                        onChange={(e) =>
+                          setAllowLateSubmissions(e.target.checked)
+                        }
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                      />
+                      <span>
+                        Allow late submissions after deadline (marked as Late)
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-[11px] text-slate-700 cursor-pointer">
+                      <input
+                        id="assessment-require-public"
+                        type="checkbox"
+                        checked={requirePublicLink}
+                        onChange={(e) =>
+                          setRequirePublicLink(e.target.checked)
+                        }
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                      />
+                      <span>
+                        Require public (&ldquo;Anyone with the link&rdquo;)
+                        check before submitting
+                        <span className="block text-[10px] text-slate-500">
+                          Turn off if students use school-restricted Google
+                          Workspace accounts.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
               {createError && (
                 <p className="text-xs text-rose-700">{createError}</p>
               )}
@@ -630,6 +746,62 @@ export function TeacherAssessmentsPanel({
                             className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
                           />
                         </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              aria-label="Edit allow Google Drive submissions"
+                              checked={editSubmissionEnabled}
+                              onChange={(e) =>
+                                setEditSubmissionEnabled(e.target.checked)
+                              }
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                            />
+                            <span>Allow Google Drive link submissions</span>
+                          </label>
+                          {editSubmissionEnabled && (
+                            <div className="space-y-1.5 pl-5">
+                              <input
+                                type="datetime-local"
+                                aria-label="Edit submission deadline"
+                                value={editDueAtInput}
+                                onChange={(e) =>
+                                  setEditDueAtInput(e.target.value)
+                                }
+                                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                              />
+                              <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  aria-label="Edit allow late submissions"
+                                  checked={editAllowLateSubmissions}
+                                  onChange={(e) =>
+                                    setEditAllowLateSubmissions(
+                                      e.target.checked
+                                    )
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                                />
+                                <span>Allow late submissions</span>
+                              </label>
+                              <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  aria-label="Edit require public Drive link"
+                                  checked={editRequirePublicLink}
+                                  onChange={(e) =>
+                                    setEditRequirePublicLink(e.target.checked)
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                                />
+                                <span>
+                                  Require public (&ldquo;Anyone with the
+                                  link&rdquo;) check
+                                </span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
                         {editError && (
                           <p className="text-[11px] text-rose-700">
                             {editError}
@@ -680,6 +852,19 @@ export function TeacherAssessmentsPanel({
                               {a.scoreSummary.gradedCount} graded •{" "}
                               {a.scoreSummary.pendingCount} pending •{" "}
                               {a.scoreSummary.missingCount} missing
+                              {a.submissionEnabled && a.submissionSummary
+                                ? ` • ${a.submissionSummary.totalSubmitted}/${a.submissionSummary.totalStudents} Drive links submitted${
+                                    a.submissionSummary.lateCount > 0
+                                      ? ` (${a.submissionSummary.lateCount} late)`
+                                      : ""
+                                  }`
+                                : ""}
+                            </p>
+                          )}
+                          {a.submissionEnabled && a.dueAt && (
+                            <p className="text-[11px] text-indigo-700">
+                              Drive due: {new Date(a.dueAt).toLocaleString()}
+                              {!a.allowLateSubmissions ? " (hard close)" : ""}
                             </p>
                           )}
                         </div>

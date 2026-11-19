@@ -180,7 +180,7 @@ Phase 6: PWA Polish, Web Push, Admin UI & Launch Readiness [M]
 - [ ] **Assessments & Teacher-Only Score Entry:**
   - Teacher Assessment CRUD (title, category, term, max score, date, description).
   - Fast Class Score Grid UI (plus CSV score import) supporting `PENDING`, `GRADED`, `MISSING` (`0`), and `EXCUSED` statuses + teacher remarks.
-  - **Student Assessment View (Strictly Read-Only):** Displays details, max score, status, raw score, applied point boost, and remarks — **zero upload/submission controls**.
+  - **Student Assessment View:** Displays details, max score, status, raw score, applied point boost, remarks, and optional Google Drive link submission when enabled by the teacher (zero binary file uploads).
 - [ ] **Deterministic Standing Engine (`lib/grading/computeStanding.ts`):**
   - Implement weighted calculation, active-category re-normalization for running standing, attendance rate computation, and grade equivalent lookup.
   - Wire Phase 4 **Redemption Approval** (`SCORE_BOOST`) so approving a student's boost request automatically increments `AssessmentScore.bonusPoints` (respecting `allowExtraCredit` vs `maxScore` cap) and updates standing.

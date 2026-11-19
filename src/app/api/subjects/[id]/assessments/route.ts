@@ -107,9 +107,85 @@ export async function GET(
     }
   }
 
+  const assessmentIds = assessments.map((a) => a.id);
+
+  const studentSubmissionsByAssessment = new Map<
+    string,
+    {
+      id: string;
+      driveUrl: string;
+      normalizedUrl: string;
+      driveResourceId: string | null;
+      status: "SUBMITTED" | "LATE";
+      accessStatus: "PUBLIC_VERIFIED" | "UNVERIFIED" | "PRIVATE_OR_RESTRICTED";
+      accessCheckedAt: Date | null;
+      studentNote: string | null;
+      submittedAt: Date;
+      updatedAt: Date;
+    }
+  >();
+
+  const teacherSubmissionSummaryByAssessment = new Map<
+    string,
+    { totalSubmitted: number; lateCount: number }
+  >();
+
+  if (
+    assessmentIds.length > 0 &&
+    typeof db.assessmentSubmission?.findMany === "function"
+  ) {
+    if (user.role === "STUDENT" && enrollment) {
+      const mySubmissions = await db.assessmentSubmission.findMany({
+        where: {
+          enrollmentId: enrollment.id,
+          assessmentId: { in: assessmentIds },
+        },
+      });
+      for (const sub of mySubmissions) {
+        studentSubmissionsByAssessment.set(sub.assessmentId, {
+          id: sub.id,
+          driveUrl: sub.driveUrl,
+          normalizedUrl: sub.normalizedUrl,
+          driveResourceId: sub.driveResourceId,
+          status: sub.status,
+          accessStatus: sub.accessStatus,
+          accessCheckedAt: sub.accessCheckedAt,
+          studentNote: sub.studentNote,
+          submittedAt: sub.submittedAt,
+          updatedAt: sub.updatedAt,
+        });
+      }
+    } else if (user.role !== "STUDENT") {
+      const allSubmissions = await db.assessmentSubmission.findMany({
+        where: {
+          assessmentId: { in: assessmentIds },
+        },
+        select: {
+          assessmentId: true,
+          status: true,
+        },
+      });
+      for (const sub of allSubmissions) {
+        const prev = teacherSubmissionSummaryByAssessment.get(
+          sub.assessmentId
+        ) ?? { totalSubmitted: 0, lateCount: 0 };
+        teacherSubmissionSummaryByAssessment.set(sub.assessmentId, {
+          totalSubmitted: prev.totalSubmitted + 1,
+          lateCount: prev.lateCount + (sub.status === "LATE" ? 1 : 0),
+        });
+      }
+    }
+  }
+
   return NextResponse.json({
     assessments: assessments.map((a) => {
       const maxScore = Number(a.maxScore);
+      const submissionConfig = {
+        submissionEnabled: Boolean(a.submissionEnabled),
+        dueAt: a.dueAt ?? null,
+        allowLateSubmissions: a.allowLateSubmissions ?? true,
+        requirePublicLink: a.requirePublicLink ?? true,
+      };
       if (user.role === "STUDENT") {
         const s = a.scores[0] as
           | {
@@ -143,7 +219,9 @@ export async function GET(
           description: a.description,
           maxScore,
           assessmentDate: a.assessmentDate,
+          ...submissionConfig,
           createdAt: a.createdAt,
+          mySubmission: studentSubmissionsByAssessment.get(a.id) ?? null,
           pendingBoost,
           myScore: {
             status,
@@ -176,6 +254,10 @@ export async function GET(
         0,
         totalStudents - gradedCount - missingCount - excusedCount
       );
+      const subSummary = teacherSubmissionSummaryByAssessment.get(a.id) ?? {
+        totalSubmitted: 0,
+        lateCount: 0,
+      };
 
       return {
         id: a.id,
@@ -186,12 +268,18 @@ export async function GET(
         description: a.description,
         maxScore,
         assessmentDate: a.assessmentDate,
+        ...submissionConfig,
         createdAt: a.createdAt,
         scoreSummary: {
           gradedCount,
           missingCount,
           excusedCount,
           pendingCount,
+          totalStudents,
+        },
+        submissionSummary: {
+          totalSubmitted: subSummary.totalSubmitted,
+          lateCount: subSummary.lateCount,
           totalStudents,
         },
       };
@@ -264,6 +352,10 @@ export async function POST(
         assessmentDate: parsed.data.assessmentDate
           ? new Date(parsed.data.assessmentDate)
           : null,
+        submissionEnabled: parsed.data.submissionEnabled ?? false,
+        dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null,
+        allowLateSubmissions: parsed.data.allowLateSubmissions ?? true,
+        requirePublicLink: parsed.data.requirePublicLink ?? true,
       },
       include: {
         category: {
@@ -288,6 +380,7 @@ export async function POST(
           title: assessment.title,
           categoryId: assessment.categoryId,
           maxScore: Number(assessment.maxScore),
+          submissionEnabled: Boolean(assessment.submissionEnabled),
         },
         ipAddress,
       },
@@ -331,6 +424,10 @@ export async function POST(
         description: created.description,
         maxScore: Number(created.maxScore),
         assessmentDate: created.assessmentDate,
+        submissionEnabled: Boolean(created.submissionEnabled),
+        dueAt: created.dueAt ?? null,
+        allowLateSubmissions: created.allowLateSubmissions ?? true,
+        requirePublicLink: created.requirePublicLink ?? true,
         createdAt: created.createdAt,
       },
     },

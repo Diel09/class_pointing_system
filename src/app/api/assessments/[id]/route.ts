@@ -125,6 +125,20 @@ export async function PATCH(
                 : null,
             }
           : {}),
+        ...(parsed.data.submissionEnabled !== undefined
+          ? { submissionEnabled: parsed.data.submissionEnabled }
+          : {}),
+        ...(parsed.data.dueAt !== undefined
+          ? {
+              dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null,
+            }
+          : {}),
+        ...(parsed.data.allowLateSubmissions !== undefined
+          ? { allowLateSubmissions: parsed.data.allowLateSubmissions }
+          : {}),
+        ...(parsed.data.requirePublicLink !== undefined
+          ? { requirePublicLink: parsed.data.requirePublicLink }
+          : {}),
       },
       include: {
         category: {
@@ -149,11 +163,13 @@ export async function PATCH(
           title: prev.title,
           categoryId: prev.categoryId,
           maxScore: Number(prev.maxScore),
+          submissionEnabled: Boolean(prev.submissionEnabled),
         },
         afterState: {
           title: next.title,
           categoryId: next.categoryId,
           maxScore: Number(next.maxScore),
+          submissionEnabled: Boolean(next.submissionEnabled),
         },
         ipAddress,
       },
@@ -173,6 +189,10 @@ export async function PATCH(
       description: updated.description,
       maxScore: Number(updated.maxScore),
       assessmentDate: updated.assessmentDate,
+      submissionEnabled: Boolean(updated.submissionEnabled),
+      dueAt: updated.dueAt ?? null,
+      allowLateSubmissions: updated.allowLateSubmissions ?? true,
+      requirePublicLink: updated.requirePublicLink ?? true,
       createdAt: updated.createdAt,
     },
   });
