@@ -59,6 +59,24 @@ export const adminUpdateTeacherSchema = z.object({
   status: z.enum(["ACTIVE", "PENDING", "SUSPENDED"]),
 });
 
+export const adminCreateTeacherSchema = z.object({
+  fullName: z
+    .string()
+    .trim()
+    .min(2, "Full name must be at least 2 characters.")
+    .max(100, "Full name is too long."),
+  email: z.string().trim().toLowerCase().email("Enter a valid email address."),
+  institutionalId: z
+    .union([institutionalIdSchema, z.literal(""), z.null(), z.undefined()])
+    .transform((val) =>
+      val && val.trim().length > 0 ? val.trim().toUpperCase() : null
+    ),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters.")
+    .max(128, "Password must be at most 128 characters."),
+});
+
 export const adminCreateInviteSchema = z.object({
   label: z.string().trim().max(80).optional().nullable(),
   maxUses: z.coerce.number().int().min(1).max(500).default(1),

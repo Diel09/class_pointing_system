@@ -1,8 +1,8 @@
-import { Prisma, type UserRole, type UserStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
 import { jsonError } from "@/lib/auth/guards";
-import { hashLookupToken, hashPassword } from "@/lib/auth/password";
+import { hashPassword } from "@/lib/auth/password";
 import { setSessionCookie } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { ensureDeviceCookie } from "@/lib/device/token";
@@ -25,8 +25,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const { fullName, email, institutionalId, password, accountType, inviteCode } =
+  const { fullName, email, institutionalId, password, accountType } =
     parsed.data;
+
+  if (accountType === "TEACHER") {
+    return jsonError(
+      "Teacher self-registration is disabled. Contact an administrator to create a teacher account.",
+      403,
+      "ERR_TEACHER_REGISTRATION_DISABLED"
+    );
+  }
 
   const existingEmail = await db.user.findUnique({
     where: { email },
@@ -59,53 +67,14 @@ export async function POST(request: Request) {
 
   try {
     const result = await db.$transaction(async (tx) => {
-      let role: UserRole = "STUDENT";
-      let status: UserStatus = "ACTIVE";
-      let usedInviteId: string | null = null;
-
-      if (accountType === "TEACHER") {
-        role = "TEACHER";
-        if (inviteCode) {
-          const codeHash = hashLookupToken(inviteCode);
-          const invite = await tx.teacherInviteCode.findUnique({
-            where: { codeHash },
-          });
-
-          if (!invite) {
-            throw new Error("INVALID_INVITE");
-          }
-          if (invite.expiresAt && invite.expiresAt <= new Date()) {
-            throw new Error("EXPIRED_INVITE");
-          }
-
-          const updated = await tx.teacherInviteCode.updateMany({
-            where: {
-              id: invite.id,
-              usedCount: { lt: invite.maxUses },
-            },
-            data: {
-              usedCount: { increment: 1 },
-            },
-          });
-
-          if (updated.count === 0) {
-            throw new Error("EXHAUSTED_INVITE");
-          }
-          usedInviteId = invite.id;
-          status = "ACTIVE";
-        } else {
-          status = "PENDING";
-        }
-      }
-
       const user = await tx.user.create({
         data: {
           fullName,
           email,
           institutionalId,
           passwordHash,
-          role,
-          status,
+          role: "STUDENT",
+          status: "ACTIVE",
         },
         select: {
           id: true,
@@ -128,7 +97,6 @@ export async function POST(request: Request) {
           afterState: {
             role: user.role,
             status: user.status,
-            usedInviteId,
           },
           ipAddress,
         },
@@ -138,9 +106,7 @@ export async function POST(request: Request) {
       return user;
     });
 
-    if (result.status === "ACTIVE") {
-      await setSessionCookie(result);
-    }
+    await setSessionCookie(result);
     await ensureDeviceCookie();
 
     return NextResponse.json(
@@ -153,26 +119,11 @@ export async function POST(request: Request) {
           role: result.role,
           status: result.status,
         },
-        pendingApproval: result.status === "PENDING",
+        pendingApproval: false,
       },
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "INVALID_INVITE") {
-        return jsonError("Invalid teacher invite code.", 400, "ERR_INVALID_INVITE");
-      }
-      if (error.message === "EXPIRED_INVITE") {
-        return jsonError("Teacher invite code has expired.", 400, "ERR_EXPIRED_INVITE");
-      }
-      if (error.message === "EXHAUSTED_INVITE") {
-        return jsonError(
-          "Teacher invite code has reached its usage limit.",
-          400,
-          "ERR_EXHAUSTED_INVITE"
-        );
-      }
-    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"

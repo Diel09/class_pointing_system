@@ -8,13 +8,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Eye,
+  EyeOff,
   FileText,
-  Key,
+  RefreshCw,
   Search,
   Shield,
   Trash2,
   UserCheck,
+  UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import {
@@ -58,15 +62,6 @@ interface StudentRow {
   status: "ACTIVE" | "PENDING" | "SUSPENDED";
   createdAt: string;
   _count: { enrollments: number };
-}
-
-interface InviteRow {
-  id: string;
-  label: string | null;
-  maxUses: number;
-  usedCount: number;
-  expiresAt: string | null;
-  createdAt: string;
 }
 
 interface TermRow {
@@ -116,10 +111,18 @@ interface AuditLogsResponse {
   };
 }
 
+function generateTemporaryPassword(length = 12): string {
+  const charset =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => charset[b % charset.length]).join("");
+}
+
 export default function AdminPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<
-    "teachers" | "students" | "subjects" | "invites" | "terms" | "audit"
+    "teachers" | "students" | "subjects" | "terms" | "audit"
   >("teachers");
 
   // Student management & bulk delete state
@@ -147,12 +150,21 @@ export default function AdminPage() {
   const [auditPage, setAuditPage] = useState(1);
   const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
 
-  // Invite creation state
-  const [inviteLabel, setInviteLabel] = useState("");
-  const [inviteMaxUses, setInviteMaxUses] = useState("1");
-  const [inviteExpiresDays, setInviteExpiresDays] = useState("30");
-  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
-  const [copiedCode, setCopiedCode] = useState(false);
+  // Teacher creation state
+  const [teacherFullName, setTeacherFullName] = useState("");
+  const [teacherEmail, setTeacherEmail] = useState("");
+  const [teacherInstitutionalId, setTeacherInstitutionalId] = useState("");
+  const [teacherPassword, setTeacherPassword] = useState("");
+  const [showTeacherPassword, setShowTeacherPassword] = useState(false);
+  const [creatingTeacher, setCreatingTeacher] = useState(false);
+  const [teacherError, setTeacherError] = useState<string | null>(null);
+  const [createdTeacherCreds, setCreatedTeacherCreds] = useState<{
+    fullName: string;
+    email: string;
+    institutionalId: string | null;
+    password: string;
+  } | null>(null);
+  const [copiedCreds, setCopiedCreds] = useState(false);
 
   // Term creation state
   const [termName, setTermName] = useState("");
@@ -178,15 +190,6 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/students");
       if (!res.ok) throw new Error("Failed to fetch students");
       return (await res.json()) as { students: StudentRow[] };
-    },
-  });
-
-  const { data: invitesData } = useQuery<{ invites: InviteRow[] }>({
-    queryKey: ["admin", "invites"],
-    queryFn: async () => {
-      const res = await fetch("/api/admin/invites");
-      if (!res.ok) throw new Error("Failed to fetch invites");
-      return (await res.json()) as { invites: InviteRow[] };
     },
   });
 
@@ -248,23 +251,56 @@ export default function AdminPage() {
     await queryClient.invalidateQueries({ queryKey: ["admin", "teachers"] });
   }
 
-  async function handleCreateInvite(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateTeacher(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setGeneratedCode(null);
-    const res = await fetch("/api/admin/invites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label: inviteLabel.trim() || null,
-        maxUses: Number(inviteMaxUses) || 1,
-        expiresInDays: inviteExpiresDays ? Number(inviteExpiresDays) : null,
-      }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { rawCode: string };
-      setGeneratedCode(data.rawCode);
-      setInviteLabel("");
-      await queryClient.invalidateQueries({ queryKey: ["admin", "invites"] });
+    setTeacherError(null);
+    setCreatedTeacherCreds(null);
+    setCreatingTeacher(true);
+
+    try {
+      const submittedPassword = teacherPassword;
+      const res = await fetch("/api/admin/teachers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: teacherFullName,
+          email: teacherEmail,
+          institutionalId: teacherInstitutionalId.trim() || null,
+          password: submittedPassword,
+        }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        teacher?: {
+          fullName: string;
+          email: string;
+          institutionalId: string | null;
+        };
+      };
+      if (!res.ok || !data.teacher) {
+        setTeacherError(data.error ?? "Failed to create teacher account.");
+        return;
+      }
+
+      setCreatedTeacherCreds({
+        fullName: data.teacher.fullName,
+        email: data.teacher.email,
+        institutionalId: data.teacher.institutionalId,
+        password: submittedPassword,
+      });
+      setTeacherFullName("");
+      setTeacherEmail("");
+      setTeacherInstitutionalId("");
+      setTeacherPassword("");
+      setShowTeacherPassword(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin", "teachers"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin", "audit-logs"] }),
+      ]);
+    } catch {
+      setTeacherError("Network error while creating teacher account.");
+    } finally {
+      setCreatingTeacher(false);
     }
   }
 
@@ -314,7 +350,8 @@ export default function AdminPage() {
                 Admin Oversight Console
               </h2>
               <p className="text-xs text-slate-500">
-                Approve teachers, generate teacher invite codes, and manage terms.
+                Create and manage teacher accounts, students, sections, and
+                terms.
               </p>
             </div>
           </div>
@@ -324,7 +361,6 @@ export default function AdminPage() {
               { id: "teachers" as const, label: "Teachers", icon: UserCheck },
               { id: "students" as const, label: "Students", icon: Users },
               { id: "subjects" as const, label: "Sections", icon: BookOpen },
-              { id: "invites" as const, label: "Invites", icon: Key },
               { id: "terms" as const, label: "Terms", icon: Calendar },
               { id: "audit" as const, label: "Audit Logs", icon: FileText },
             ].map((item) => {
@@ -387,69 +423,287 @@ export default function AdminPage() {
         )}
 
         {tab === "teachers" && (
-          <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900">
-              Teacher Accounts
-            </h3>
-            <div className="divide-y divide-slate-100">
-              {(teachersData?.teachers ?? []).map((teacher) => (
+          <div className="space-y-6">
+            <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-4 w-4 text-indigo-600" />
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Create Teacher Account
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Teacher accounts are provisioned exclusively by admins and
+                    activated immediately.
+                  </p>
+                </div>
+              </div>
+
+              {teacherError && (
                 <div
-                  key={teacher.id}
-                  className="py-3 flex items-center justify-between gap-3 flex-wrap"
+                  role="alert"
+                  className="rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-2.5 text-xs text-rose-700"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {teacher.fullName}
-                      </p>
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                          teacher.status === "ACTIVE"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : teacher.status === "PENDING"
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-rose-50 text-rose-700"
-                        )}
-                      >
-                        {teacher.status}
+                  {teacherError}
+                </div>
+              )}
+
+              {createdTeacherCreds && (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-start justify-between gap-3 flex-wrap">
+                  <div className="space-y-1 text-xs text-emerald-950">
+                    <p className="font-bold text-emerald-800">
+                      Teacher Account Created ({createdTeacherCreds.fullName})
+                    </p>
+                    <p>
+                      <span className="font-semibold">Email:</span>{" "}
+                      <span className="font-mono">
+                        {createdTeacherCreds.email}
                       </span>
-                    </div>
-                    <p className="text-xs text-slate-500">
-                      {teacher.email}
-                      {teacher.institutionalId
-                        ? ` • ${teacher.institutionalId}`
-                        : ""}{" "}
-                      • {teacher._count.taughtSubjects} subjects
+                    </p>
+                    {createdTeacherCreds.institutionalId && (
+                      <p>
+                        <span className="font-semibold">Employee ID:</span>{" "}
+                        <span className="font-mono">
+                          {createdTeacherCreds.institutionalId}
+                        </span>
+                      </p>
+                    )}
+                    <p>
+                      <span className="font-semibold">Initial Password:</span>{" "}
+                      <span className="font-mono">
+                        {createdTeacherCreds.password}
+                      </span>
                     </p>
                   </div>
-
                   <div className="flex items-center gap-2">
-                    {teacher.status !== "ACTIVE" && (
-                      <button
-                        type="button"
-                        onClick={() => updateTeacherStatus(teacher.id, "ACTIVE")}
-                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                      >
-                        Approve
-                      </button>
-                    )}
-                    {teacher.status === "ACTIVE" && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateTeacherStatus(teacher.id, "SUSPENDED")
-                        }
-                        className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
-                      >
-                        Suspend
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const lines = [
+                          `Name: ${createdTeacherCreds.fullName}`,
+                          `Email: ${createdTeacherCreds.email}`,
+                          ...(createdTeacherCreds.institutionalId
+                            ? [
+                                `Employee ID: ${createdTeacherCreds.institutionalId}`,
+                              ]
+                            : []),
+                          `Password: ${createdTeacherCreds.password}`,
+                        ];
+                        await navigator.clipboard.writeText(lines.join("\n"));
+                        setCopiedCreds(true);
+                        setTimeout(() => setCopiedCreds(false), 2000);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800"
+                    >
+                      {copiedCreds ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {copiedCreds ? "Copied" : "Copy Credentials"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreatedTeacherCreds(null)}
+                      aria-label="Dismiss credentials"
+                      className="rounded-lg p-1.5 text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+              )}
+
+              <form
+                onSubmit={handleCreateTeacher}
+                className="grid gap-3 sm:grid-cols-2"
+              >
+                <div className="space-y-1">
+                  <label
+                    htmlFor="admin-teacher-name"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Full Name
+                  </label>
+                  <input
+                    id="admin-teacher-name"
+                    type="text"
+                    required
+                    minLength={2}
+                    value={teacherFullName}
+                    onChange={(e) => setTeacherFullName(e.target.value)}
+                    placeholder="Prof. Maria Reyes"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label
+                    htmlFor="admin-teacher-email"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Email Address
+                  </label>
+                  <input
+                    id="admin-teacher-email"
+                    type="email"
+                    required
+                    value={teacherEmail}
+                    onChange={(e) => setTeacherEmail(e.target.value)}
+                    placeholder="mreyes@university.edu"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label
+                    htmlFor="admin-teacher-id"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Employee ID (Optional)
+                  </label>
+                  <input
+                    id="admin-teacher-id"
+                    type="text"
+                    value={teacherInstitutionalId}
+                    onChange={(e) => setTeacherInstitutionalId(e.target.value)}
+                    placeholder="EMP-2001"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <label
+                      htmlFor="admin-teacher-password"
+                      className="block text-xs font-semibold text-slate-700"
+                    >
+                      Initial Password (min. 8 characters)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTeacherPassword(generateTemporaryPassword());
+                        setShowTeacherPassword(true);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      <span>Generate</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      id="admin-teacher-password"
+                      type={showTeacherPassword ? "text" : "password"}
+                      required
+                      minLength={8}
+                      value={teacherPassword}
+                      onChange={(e) => setTeacherPassword(e.target.value)}
+                      placeholder="At least 8 characters"
+                      className="w-full rounded-xl border border-slate-300 pl-3 pr-9 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowTeacherPassword((prev) => !prev)}
+                      aria-label={
+                        showTeacherPassword ? "Hide password" : "Show password"
+                      }
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    >
+                      {showTeacherPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={creatingTeacher}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>
+                      {creatingTeacher
+                        ? "Creating Teacher..."
+                        : "Create Teacher Account"}
+                    </span>
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-900">
+                Teacher Accounts ({teachersData?.teachers.length ?? 0})
+              </h3>
+              <div className="divide-y divide-slate-100">
+                {(teachersData?.teachers ?? []).map((teacher) => (
+                  <div
+                    key={teacher.id}
+                    className="py-3 flex items-center justify-between gap-3 flex-wrap"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {teacher.fullName}
+                        </p>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                            teacher.status === "ACTIVE"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : teacher.status === "PENDING"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-rose-50 text-rose-700"
+                          )}
+                        >
+                          {teacher.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {teacher.email}
+                        {teacher.institutionalId
+                          ? ` • ${teacher.institutionalId}`
+                          : ""}{" "}
+                        • {teacher._count.taughtSubjects} subjects
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {teacher.status !== "ACTIVE" && (
+                        <button
+                          type="button"
+                          onClick={() => updateTeacherStatus(teacher.id, "ACTIVE")}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                        >
+                          {teacher.status === "SUSPENDED"
+                            ? "Reactivate"
+                            : "Approve"}
+                        </button>
+                      )}
+                      {teacher.status === "ACTIVE" && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateTeacherStatus(teacher.id, "SUSPENDED")
+                          }
+                          className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                        >
+                          Suspend
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
         )}
 
         {tab === "students" && (() => {
@@ -820,114 +1074,6 @@ export default function AdminPage() {
             </section>
           );
         })()}
-
-        {tab === "invites" && (
-          <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-5">
-            <form
-              onSubmit={handleCreateInvite}
-              className="grid gap-3 sm:grid-cols-4 items-end"
-            >
-              <div className="space-y-1 sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Label (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={inviteLabel}
-                  onChange={(e) => setInviteLabel(e.target.value)}
-                  placeholder="CCS Faculty Onboarding"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Max Uses
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={inviteMaxUses}
-                  onChange={(e) => setInviteMaxUses(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Expires (Days)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={inviteExpiresDays}
-                  onChange={(e) => setInviteExpiresDays(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="sm:col-span-4">
-                <button
-                  type="submit"
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-                >
-                  Generate Teacher Invite Code
-                </button>
-              </div>
-            </form>
-
-            {generatedCode && (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-xs font-semibold text-emerald-800">
-                    New Invite Code (Copy now — shown once):
-                  </p>
-                  <p className="text-lg font-mono font-bold text-emerald-950">
-                    {generatedCode}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(generatedCode);
-                    setCopiedCode(true);
-                    setTimeout(() => setCopiedCode(false), 2000);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white"
-                >
-                  {copiedCode ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  <span>{copiedCode ? "Copied" : "Copy Code"}</span>
-                </button>
-              </div>
-            )}
-
-            <div className="divide-y divide-slate-100">
-              {(invitesData?.invites ?? []).map((invite) => (
-                <div
-                  key={invite.id}
-                  className="py-2.5 flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-900">
-                      {invite.label || "Teacher Invite"}
-                    </p>
-                    <p className="text-slate-500">
-                      Used {invite.usedCount} / {invite.maxUses}
-                    </p>
-                  </div>
-                  <span className="text-slate-500">
-                    {invite.expiresAt
-                      ? `Expires ${new Date(invite.expiresAt).toLocaleDateString()}`
-                      : "No expiry"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
 
         {tab === "terms" && (
           <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-5">

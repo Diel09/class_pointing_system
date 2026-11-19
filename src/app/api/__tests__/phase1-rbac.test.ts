@@ -185,13 +185,10 @@ describe("Phase 1 RBAC, Teacher Gating & Subject Isolation", () => {
     expect(rosterRes.status).toBe(403);
   });
 
-  it("rejects invalid teacher invite codes and creates PENDING teacher when invite code is omitted", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    teacherInviteFindUniqueMock.mockResolvedValue(null);
-
+  it("blocks teacher self-registration on POST /api/auth/register and allows ADMIN-only teacher creation on POST /api/admin/teachers", async () => {
     const { POST: register } = await import("@/app/api/auth/register/route");
 
-    const invalidRes = await register(
+    const teacherSelfRegRes = await register(
       new Request("http://localhost/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -200,45 +197,94 @@ describe("Phase 1 RBAC, Teacher Gating & Subject Isolation", () => {
           email: "newteacher@classpulse.local",
           password: "Password123!",
           accountType: "TEACHER",
-          inviteCode: "BAD-CODE-999",
+          inviteCode: "TCH-ANYCODE",
         }),
       })
     );
-    expect(invalidRes.status).toBe(400);
-    const invalidJson = (await invalidRes.json()) as { code: string };
-    expect(invalidJson.code).toBe("ERR_INVALID_INVITE");
+    expect(teacherSelfRegRes.status).toBe(403);
+    const teacherSelfRegJson = (await teacherSelfRegRes.json()) as {
+      code: string;
+    };
+    expect(teacherSelfRegJson.code).toBe("ERR_TEACHER_REGISTRATION_DISABLED");
+    expect(userCreateMock).not.toHaveBeenCalled();
 
-    userCreateMock.mockResolvedValueOnce({
-      id: "pending-teacher-1",
-      email: "pending@classpulse.local",
-      institutionalId: null,
-      fullName: "Pending Teacher",
+    const { POST: createTeacher } = await import(
+      "@/app/api/admin/teachers/route"
+    );
+
+    // Non-admin (TEACHER) cannot create teacher accounts
+    getCurrentUserMock.mockResolvedValue({
+      id: "teacher-a",
+      email: "ta@classpulse.local",
+      institutionalId: "EMP-1",
+      fullName: "Teacher A",
       role: "TEACHER",
-      status: "PENDING",
+      status: "ACTIVE",
       sessionVersion: 1,
-      createdAt: new Date(),
     });
-
-    const pendingRes = await register(
-      new Request("http://localhost/api/auth/register", {
+    const forbiddenRes = await createTeacher(
+      new Request("http://localhost/api/admin/teachers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fullName: "Pending Teacher",
-          email: "pending@classpulse.local",
+          fullName: "New Teacher",
+          email: "newteacher@classpulse.local",
           password: "Password123!",
-          accountType: "TEACHER",
         }),
       })
     );
-    expect(pendingRes.status).toBe(201);
-    const pendingJson = (await pendingRes.json()) as {
-      pendingApproval: boolean;
-      user: { status: string };
+    expect(forbiddenRes.status).toBe(403);
+
+    // ADMIN creates an ACTIVE teacher account
+    getCurrentUserMock.mockResolvedValue({
+      id: "admin-1",
+      email: "admin@classpulse.local",
+      institutionalId: "ADM-1",
+      fullName: "Admin",
+      role: "ADMIN",
+      status: "ACTIVE",
+      sessionVersion: 1,
+    });
+    userFindUniqueMock.mockResolvedValue(null);
+    userCreateMock.mockResolvedValueOnce({
+      id: "teacher-created-1",
+      email: "newteacher@classpulse.local",
+      institutionalId: "EMP-2001",
+      fullName: "New Teacher",
+      role: "TEACHER",
+      status: "ACTIVE",
+      createdAt: new Date(),
+      _count: { taughtSubjects: 0 },
+    });
+
+    const createdRes = await createTeacher(
+      new Request("http://localhost/api/admin/teachers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: "New Teacher",
+          email: "newteacher@classpulse.local",
+          institutionalId: "emp-2001",
+          password: "Password123!",
+        }),
+      })
+    );
+    expect(createdRes.status).toBe(201);
+    const createdJson = (await createdRes.json()) as {
+      teacher: { role: string; status: string; institutionalId: string };
     };
-    expect(pendingJson.pendingApproval).toBe(true);
-    expect(pendingJson.user.status).toBe("PENDING");
-    expect(setSessionCookieMock).not.toHaveBeenCalled();
+    expect(createdJson.teacher.role).toBe("TEACHER");
+    expect(createdJson.teacher.status).toBe("ACTIVE");
+    expect(createdJson.teacher.institutionalId).toBe("EMP-2001");
+    expect(auditCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          actorUserId: "admin-1",
+          action: "ADMIN_TEACHER_CREATED",
+          targetId: "teacher-created-1",
+        }),
+      })
+    );
   });
 
   it("initializes an isolated 0/0 wallet when a student joins a subject", async () => {
