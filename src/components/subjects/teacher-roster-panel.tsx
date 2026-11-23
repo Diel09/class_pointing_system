@@ -286,7 +286,7 @@ export function TeacherRosterPanel({
                 rows={3}
                 value={rosterInput}
                 onChange={(e) => setRosterInput(e.target.value)}
-                placeholder={"student6@classpulse.local\n2026-0007, 2026-0008"}
+                placeholder={"student6@classpulse.local\n26-00007, 2026-0008"}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono focus:border-indigo-500 focus:outline-none"
               />
               {rosterError && (
@@ -404,7 +404,7 @@ export function TeacherRosterPanel({
                 type="text"
                 value={coTeacherInput}
                 onChange={(e) => setCoTeacherInput(e.target.value)}
-                placeholder="teacher2@classpulse.local or T-2026-002"
+                placeholder="teacher2@classpulse.local or T-26-00002"
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono focus:border-indigo-500 focus:outline-none"
               />
               {coTeacherError && (

@@ -119,6 +119,61 @@ export async function PATCH(
   const ipAddress = getClientIp(request);
   const prev = owner.data.assessment;
 
+  const nextIsGroupMode = parsed.data.isGroupMode ?? prev.isGroupMode;
+  const nextGroupSetId = nextIsGroupMode
+    ? parsed.data.groupSetId !== undefined
+      ? parsed.data.groupSetId
+      : prev.groupSetId
+    : null;
+
+  if (nextIsGroupMode && !nextGroupSetId) {
+    return jsonError(
+      "Select a group set when Group Mode is enabled.",
+      400,
+      "ERR_VALIDATION"
+    );
+  }
+
+  const groupConfigChanging =
+    nextIsGroupMode !== prev.isGroupMode || nextGroupSetId !== prev.groupSetId;
+
+  if (groupConfigChanging) {
+    const [indSubCount, grpSubCount, indScoreCount, grpScoreCount] =
+      await Promise.all([
+        db.assessmentSubmission.count({ where: { assessmentId: id } }),
+        db.groupAssessmentSubmission.count({ where: { assessmentId: id } }),
+        db.assessmentScore.count({ where: { assessmentId: id } }),
+        db.groupAssessmentScore.count({ where: { assessmentId: id } }),
+      ]);
+
+    if (
+      indSubCount > 0 ||
+      grpSubCount > 0 ||
+      indScoreCount > 0 ||
+      grpScoreCount > 0
+    ) {
+      return jsonError(
+        "Cannot change group mode or group set after submissions or scores have been recorded.",
+        409,
+        "ERR_GROUP_MODE_LOCKED"
+      );
+    }
+
+    if (nextGroupSetId) {
+      const groupSet = await db.groupSet.findUnique({
+        where: { id: nextGroupSetId },
+        select: { id: true, subjectId: true },
+      });
+      if (!groupSet || groupSet.subjectId !== prev.subjectId) {
+        return jsonError(
+          "Group set not found in this subject.",
+          404,
+          "ERR_GROUP_SET_NOT_FOUND"
+        );
+      }
+    }
+  }
+
   const updated = await db.$transaction(async (tx) => {
     const next = await tx.assessment.update({
       where: { id },
@@ -154,6 +209,12 @@ export async function PATCH(
         ...(parsed.data.requirePublicLink !== undefined
           ? { requirePublicLink: parsed.data.requirePublicLink }
           : {}),
+        ...(groupConfigChanging
+          ? {
+              isGroupMode: nextIsGroupMode,
+              groupSetId: nextGroupSetId,
+            }
+          : {}),
       },
       include: {
         category: {
@@ -162,6 +223,12 @@ export async function PATCH(
             name: true,
             termKey: true,
             categoryType: true,
+          },
+        },
+        groupSet: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },
@@ -179,12 +246,16 @@ export async function PATCH(
           categoryId: prev.categoryId,
           maxScore: Number(prev.maxScore),
           submissionEnabled: Boolean(prev.submissionEnabled),
+          isGroupMode: prev.isGroupMode,
+          groupSetId: prev.groupSetId,
         },
         afterState: {
           title: next.title,
           categoryId: next.categoryId,
           maxScore: Number(next.maxScore),
           submissionEnabled: Boolean(next.submissionEnabled),
+          isGroupMode: next.isGroupMode,
+          groupSetId: next.groupSetId,
         },
         ipAddress,
       },
@@ -208,6 +279,9 @@ export async function PATCH(
       dueAt: updated.dueAt ?? null,
       allowLateSubmissions: updated.allowLateSubmissions ?? true,
       requirePublicLink: updated.requirePublicLink ?? true,
+      isGroupMode: updated.isGroupMode,
+      groupSetId: updated.groupSetId,
+      groupSet: updated.groupSet,
       createdAt: updated.createdAt,
     },
   });

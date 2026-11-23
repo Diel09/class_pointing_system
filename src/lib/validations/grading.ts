@@ -314,29 +314,41 @@ export const updateGradeScaleSchema = z
     }
   });
 
-export const createAssessmentSchema = z.object({
-  categoryId: z.string().uuid("Select a valid grade category."),
-  title: z
-    .string()
-    .trim()
-    .min(2, "Assessment title must be at least 2 characters.")
-    .max(120, "Assessment title must be 120 characters or fewer."),
-  description: z
-    .string()
-    .trim()
-    .max(1000, "Description must be 1000 characters or fewer.")
-    .optional()
-    .nullable(),
-  maxScore: z
-    .number()
-    .positive("Max score must be greater than 0.")
-    .max(10_000, "Max score cannot exceed 10,000."),
-  assessmentDate: z.string().datetime().optional().nullable(),
-  submissionEnabled: z.boolean().optional().default(false),
-  dueAt: z.string().datetime().optional().nullable(),
-  allowLateSubmissions: z.boolean().optional().default(true),
-  requirePublicLink: z.boolean().optional().default(true),
-});
+export const createAssessmentSchema = z
+  .object({
+    categoryId: z.string().uuid("Select a valid grade category."),
+    title: z
+      .string()
+      .trim()
+      .min(2, "Assessment title must be at least 2 characters.")
+      .max(120, "Assessment title must be 120 characters or fewer."),
+    description: z
+      .string()
+      .trim()
+      .max(1000, "Description must be 1000 characters or fewer.")
+      .optional()
+      .nullable(),
+    maxScore: z
+      .number()
+      .positive("Max score must be greater than 0.")
+      .max(10_000, "Max score cannot exceed 10,000."),
+    assessmentDate: z.string().datetime().optional().nullable(),
+    submissionEnabled: z.boolean().optional().default(false),
+    dueAt: z.string().datetime().optional().nullable(),
+    allowLateSubmissions: z.boolean().optional().default(true),
+    requirePublicLink: z.boolean().optional().default(true),
+    isGroupMode: z.boolean().optional().default(false),
+    groupSetId: z.string().uuid("Select a valid group set.").optional().nullable(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.isGroupMode && !val.groupSetId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["groupSetId"],
+        message: "Select a group set when Group Mode is enabled.",
+      });
+    }
+  });
 
 export const updateAssessmentSchema = z
   .object({
@@ -349,9 +361,20 @@ export const updateAssessmentSchema = z
     dueAt: z.string().datetime().optional().nullable(),
     allowLateSubmissions: z.boolean().optional(),
     requirePublicLink: z.boolean().optional(),
+    isGroupMode: z.boolean().optional(),
+    groupSetId: z.string().uuid("Select a valid group set.").optional().nullable(),
   })
   .refine((val) => Object.keys(val).length > 0, {
     message: "Provide at least one assessment field to update.",
+  })
+  .superRefine((val, ctx) => {
+    if (val.isGroupMode === true && val.groupSetId === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["groupSetId"],
+        message: "Select a group set when Group Mode is enabled.",
+      });
+    }
   });
 
 export const submitDriveLinkSchema = z
@@ -404,12 +427,88 @@ export const scoreEntryInputSchema = z
     }
   });
 
-export const upsertAssessmentScoresSchema = z.object({
-  scores: z
-    .array(scoreEntryInputSchema)
-    .min(1, "Provide at least one score update.")
-    .max(300, "Maximum of 300 score rows per request."),
-});
+export const groupScoreEntryInputSchema = z
+  .object({
+    groupId: z.string().uuid("Invalid group ID."),
+    status: z.enum(["PENDING", "GRADED", "MISSING", "EXCUSED"]),
+    rawScore: z.number().min(0, "Score cannot be negative.").nullable().optional(),
+    remarks: z
+      .string()
+      .trim()
+      .max(280, "Remarks must be 280 characters or fewer.")
+      .optional()
+      .nullable(),
+  })
+  .superRefine((val, ctx) => {
+    if (
+      val.status === "GRADED" &&
+      (val.rawScore === null || val.rawScore === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rawScore"],
+        message: "Graded status requires a numeric score.",
+      });
+    }
+  });
+
+export const memberOverrideScoreEntrySchema = z
+  .object({
+    enrollmentId: z.string().uuid("Invalid student enrollment ID."),
+    isGroupOverride: z.boolean().default(true),
+    status: z.enum(["PENDING", "GRADED", "MISSING", "EXCUSED"]),
+    rawScore: z.number().min(0, "Score cannot be negative.").nullable().optional(),
+    remarks: z
+      .string()
+      .trim()
+      .max(280, "Remarks must be 280 characters or fewer.")
+      .optional()
+      .nullable(),
+  })
+  .superRefine((val, ctx) => {
+    if (
+      val.isGroupOverride &&
+      val.status === "GRADED" &&
+      (val.rawScore === null || val.rawScore === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rawScore"],
+        message: "Graded override requires a numeric score.",
+      });
+    }
+  });
+
+export const upsertAssessmentScoresSchema = z
+  .object({
+    scores: z
+      .array(scoreEntryInputSchema)
+      .min(1, "Provide at least one score update.")
+      .max(300, "Maximum of 300 score rows per request.")
+      .optional(),
+    groupScores: z
+      .array(groupScoreEntryInputSchema)
+      .max(200, "Maximum of 200 group rows per request.")
+      .optional(),
+    memberScores: z
+      .array(memberOverrideScoreEntrySchema)
+      .max(300, "Maximum of 300 member rows per request.")
+      .optional(),
+  })
+  .superRefine((val, ctx) => {
+    const hasIndividual = Boolean(val.scores && val.scores.length > 0);
+    const hasGroup = Boolean(
+      (val.groupScores && val.groupScores.length > 0) ||
+        (val.memberScores && val.memberScores.length > 0)
+    );
+    if (!hasIndividual && !hasGroup) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scores"],
+        message: "Provide at least one score update.",
+      });
+    }
+  });
 
 export const updateStandingOverrideSchema = z.object({
   manualStandingOverride: z.enum(["NONE", "INC", "DRP"]),

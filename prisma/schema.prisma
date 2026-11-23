@@ -136,6 +136,7 @@ model User {
   ledgerEntries       PointLedgerEntry[]   @relation("LedgerActor")
   reviewedRedemptions RedemptionRequest[]  @relation("RedemptionReviewer")
   updatedScores       AssessmentScore[]    @relation("ScoreUpdatedBy")
+  updatedGroupScores  GroupAssessmentScore[] @relation("GroupScoreUpdatedBy")
   pushSubscriptions   PushSubscription[]
   notifications       Notification[]
 
@@ -220,6 +221,7 @@ model Subject {
   gradeCategories    GradeCategory[]
   assessments        Assessment[]
   gradeScaleRules    GradeScaleRule[]
+  groupSets          GroupSet[]
   notifications      Notification[]
 
   @@index([teacherId, isArchived])
@@ -280,6 +282,8 @@ model SubjectEnrollment {
   redemptionRequests    RedemptionRequest[]
   assessmentScores      AssessmentScore[]
   assessmentSubmissions AssessmentSubmission[]
+  groupMemberships      StudentGroupMembership[]
+  submittedGroupWork    GroupAssessmentSubmission[]
 
   @@unique([subjectId, studentId])
   @@index([studentId])
@@ -478,17 +482,23 @@ model Assessment {
   dueAt                DateTime?
   allowLateSubmissions Boolean   @default(true)
   requirePublicLink    Boolean   @default(true)
+  isGroupMode          Boolean   @default(false)
+  groupSetId           String?   @db.Uuid
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
-  subject           Subject                @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  category          GradeCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  subject           Subject                     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  category          GradeCategory               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  groupSet          GroupSet?                   @relation(fields: [groupSetId], references: [id], onDelete: Restrict)
   scores            AssessmentScore[]
   submissions       AssessmentSubmission[]
+  groupSubmissions  GroupAssessmentSubmission[]
+  groupScores       GroupAssessmentScore[]
   redemptionTargets RedemptionRequest[]
 
   @@index([subjectId, categoryId])
   @@index([subjectId, assessmentDate])
+  @@index([groupSetId])
 }
 
 model AssessmentSubmission {
@@ -520,6 +530,7 @@ model AssessmentScore {
   rawScore           Decimal?              @db.Decimal(8, 2)
   bonusPoints        Decimal               @default(0) @db.Decimal(8, 2)
   allowExtraCredit   Boolean               @default(false)
+  isGroupOverride    Boolean               @default(false)
   remarks            String?
   updatedByTeacherId String?               @db.Uuid
   updatedAt          DateTime              @updatedAt
@@ -530,6 +541,96 @@ model AssessmentScore {
 
   @@unique([assessmentId, enrollmentId])
   @@index([enrollmentId])
+}
+
+model GroupSet {
+  id        String   @id @default(uuid()) @db.Uuid
+  subjectId String   @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subject     Subject                  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  groups      StudentGroup[]
+  memberships StudentGroupMembership[]
+  assessments Assessment[]
+
+  @@unique([subjectId, name])
+  @@index([subjectId, createdAt])
+}
+
+model StudentGroup {
+  id         String   @id @default(uuid()) @db.Uuid
+  groupSetId String   @db.Uuid
+  name       String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  groupSet         GroupSet                    @relation(fields: [groupSetId], references: [id], onDelete: Cascade)
+  memberships      StudentGroupMembership[]
+  groupSubmissions GroupAssessmentSubmission[]
+  groupScores      GroupAssessmentScore[]
+
+  @@unique([groupSetId, name])
+  @@index([groupSetId, sortOrder])
+}
+
+model StudentGroupMembership {
+  id           String   @id @default(uuid()) @db.Uuid
+  groupSetId   String   @db.Uuid
+  groupId      String   @db.Uuid
+  enrollmentId String   @db.Uuid
+  createdAt    DateTime @default(now())
+
+  groupSet   GroupSet          @relation(fields: [groupSetId], references: [id], onDelete: Cascade)
+  group      StudentGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  enrollment SubjectEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([groupSetId, enrollmentId])
+  @@index([groupId])
+  @@index([enrollmentId])
+}
+
+model GroupAssessmentSubmission {
+  id                      String           @id @default(uuid()) @db.Uuid
+  assessmentId            String           @db.Uuid
+  groupId                 String           @db.Uuid
+  submittedByEnrollmentId String?          @db.Uuid
+  driveUrl                String
+  normalizedUrl           String
+  driveResourceId         String?
+  status                  SubmissionStatus @default(SUBMITTED)
+  accessStatus            LinkAccessStatus @default(PUBLIC_VERIFIED)
+  accessCheckedAt         DateTime?
+  studentNote             String?
+  submittedAt             DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  assessment            Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  group                 StudentGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  submittedByEnrollment SubjectEnrollment? @relation(fields: [submittedByEnrollmentId], references: [id], onDelete: SetNull)
+
+  @@unique([assessmentId, groupId])
+  @@index([assessmentId, status])
+}
+
+model GroupAssessmentScore {
+  id                 String                @id @default(uuid()) @db.Uuid
+  assessmentId       String                @db.Uuid
+  groupId            String                @db.Uuid
+  status             AssessmentScoreStatus @default(PENDING)
+  rawScore           Decimal?              @db.Decimal(8, 2)
+  remarks            String?
+  updatedByTeacherId String?               @db.Uuid
+  updatedAt          DateTime              @updatedAt
+
+  assessment       Assessment   @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  group            StudentGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  updatedByTeacher User?        @relation("GroupScoreUpdatedBy", fields: [updatedByTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([assessmentId, groupId])
+  @@index([groupId])
 }
 
 model GradeScaleRule {

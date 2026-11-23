@@ -41,6 +41,14 @@ interface TeacherAssessmentDto {
   dueAt?: string | null;
   allowLateSubmissions?: boolean;
   requirePublicLink?: boolean;
+  isGroupMode?: boolean;
+  groupSetId?: string | null;
+  groupSet?: {
+    id: string;
+    name: string;
+    groupCount?: number;
+  } | null;
+  hasRecordedWork?: boolean;
   scoreSummary?: {
     gradedCount: number;
     missingCount: number;
@@ -52,7 +60,14 @@ interface TeacherAssessmentDto {
     totalSubmitted: number;
     lateCount: number;
     totalStudents: number;
+    totalGroups?: number;
   };
+}
+
+interface GroupSetOption {
+  id: string;
+  name: string;
+  groups: { id: string }[];
 }
 
 interface ClassStandingRow {
@@ -97,6 +112,8 @@ export function TeacherAssessmentsPanel({
   const [dueAtInput, setDueAtInput] = useState("");
   const [allowLateSubmissions, setAllowLateSubmissions] = useState(true);
   const [requirePublicLink, setRequirePublicLink] = useState(true);
+  const [isGroupMode, setIsGroupMode] = useState(false);
+  const [groupSetId, setGroupSetId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [initializingCategories, setInitializingCategories] = useState(false);
@@ -117,6 +134,9 @@ export function TeacherAssessmentsPanel({
   const [editAllowLateSubmissions, setEditAllowLateSubmissions] =
     useState(true);
   const [editRequirePublicLink, setEditRequirePublicLink] = useState(true);
+  const [editIsGroupMode, setEditIsGroupMode] = useState(false);
+  const [editGroupSetId, setEditGroupSetId] = useState("");
+  const [editHasRecordedWork, setEditHasRecordedWork] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -161,6 +181,30 @@ export function TeacherAssessmentsPanel({
       return (await res.json()) as { standings: ClassStandingRow[] };
     },
   });
+
+  const { data: groupSetsData } = useQuery<{
+    groupSets: GroupSetOption[];
+  }>({
+    queryKey: ["subject-group-sets", subjectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/subjects/${subjectId}/group-sets`, {
+        credentials: "same-origin",
+      });
+      if (!res.ok) return { groupSets: [] };
+      return (await res.json()) as { groupSets: GroupSetOption[] };
+    },
+  });
+
+  const groupSets = useMemo(
+    () => groupSetsData?.groupSets ?? [],
+    [groupSetsData?.groupSets]
+  );
+
+  useEffect(() => {
+    if (!groupSetId && groupSets.length > 0) {
+      setGroupSetId(groupSets[0]!.id);
+    }
+  }, [groupSets, groupSetId]);
 
   const assessmentCategories = useMemo(
     () =>
@@ -230,6 +274,9 @@ export function TeacherAssessmentsPanel({
     setEditDueAtInput(toLocalDateTimeInputValue(assessment.dueAt));
     setEditAllowLateSubmissions(assessment.allowLateSubmissions ?? true);
     setEditRequirePublicLink(assessment.requirePublicLink ?? true);
+    setEditIsGroupMode(Boolean(assessment.isGroupMode));
+    setEditGroupSetId(assessment.groupSetId ?? groupSets[0]?.id ?? "");
+    setEditHasRecordedWork(Boolean(assessment.hasRecordedWork));
     setEditError(null);
   }
 
@@ -257,6 +304,12 @@ export function TeacherAssessmentsPanel({
               : null,
           allowLateSubmissions: editAllowLateSubmissions,
           requirePublicLink: editRequirePublicLink,
+          ...(!editHasRecordedWork
+            ? {
+                isGroupMode: editIsGroupMode,
+                groupSetId: editIsGroupMode ? editGroupSetId || null : null,
+              }
+            : {}),
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -311,6 +364,8 @@ export function TeacherAssessmentsPanel({
               : null,
           allowLateSubmissions,
           requirePublicLink,
+          isGroupMode,
+          groupSetId: isGroupMode ? groupSetId || null : null,
         }),
       });
       const data = (await res.json()) as {
@@ -328,6 +383,7 @@ export function TeacherAssessmentsPanel({
       setDueAtInput("");
       setAllowLateSubmissions(true);
       setRequirePublicLink(true);
+      setIsGroupMode(false);
       setShowCreateForm(false);
       setHighlightedAssessmentId(data.assessment.id);
       await Promise.all([
@@ -653,13 +709,78 @@ export function TeacherAssessmentsPanel({
                 )}
               </div>
 
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2.5">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                  <input
+                    id="assessment-group-mode"
+                    type="checkbox"
+                    checked={isGroupMode}
+                    onChange={(e) => setIsGroupMode(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600"
+                  />
+                  <span>Group Activity (students submit &amp; get graded by group)</span>
+                </label>
+
+                {isGroupMode && (
+                  <div className="space-y-2 pl-3 sm:pl-5 pt-2 border-t border-slate-100">
+                    {groupSets.length === 0 ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] text-amber-800 space-y-1">
+                        <p>
+                          No group sets exist yet for this class. Create one first in Roster &rarr; Student Groups.
+                        </p>
+                        <Link
+                          href={`/subjects/${subjectId}/roster?view=groups`}
+                          className="inline-flex items-center font-semibold text-indigo-700 hover:underline"
+                        >
+                          Manage Group Sets &rarr;
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <label
+                            htmlFor="assessment-group-set"
+                            className="block text-[11px] font-medium text-slate-600"
+                          >
+                            Group Set
+                          </label>
+                          <Link
+                            href={`/subjects/${subjectId}/roster?view=groups`}
+                            className="text-[11px] font-semibold text-indigo-600 hover:underline"
+                          >
+                            Manage Groups &rarr;
+                          </Link>
+                        </div>
+                        <select
+                          id="assessment-group-set"
+                          required={isGroupMode}
+                          value={groupSetId}
+                          onChange={(e) => setGroupSetId(e.target.value)}
+                          className="w-full min-h-[38px] sm:min-h-0 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs"
+                        >
+                          {groupSets.map((gs) => (
+                            <option key={gs.id} value={gs.id}>
+                              {gs.name} ({gs.groups.length} groups)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {createError && (
                 <p className="text-xs text-rose-700">{createError}</p>
               )}
 
               <button
                 type="submit"
-                disabled={creating || !categoryId}
+                disabled={
+                  creating ||
+                  !categoryId ||
+                  (isGroupMode && (!groupSetId || groupSets.length === 0))
+                }
                 className="w-full rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 {creating ? "Creating..." : "Create Assessment"}
@@ -804,6 +925,45 @@ export function TeacherAssessmentsPanel({
                             </div>
                           )}
                         </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+                          <label className="flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              aria-label="Edit group activity mode"
+                              disabled={editHasRecordedWork}
+                              checked={editIsGroupMode}
+                              onChange={(e) =>
+                                setEditIsGroupMode(e.target.checked)
+                              }
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 disabled:opacity-50"
+                            />
+                            <span>Group Activity (submit &amp; grade by group)</span>
+                          </label>
+                          {editHasRecordedWork && (
+                            <p className="text-[10px] text-amber-700 pl-5">
+                              Group mode cannot be changed once submissions or scores exist.
+                            </p>
+                          )}
+                          {editIsGroupMode && (
+                            <div className="pl-3 sm:pl-5">
+                              <select
+                                aria-label="Edit group set"
+                                disabled={editHasRecordedWork}
+                                value={editGroupSetId}
+                                onChange={(e) =>
+                                  setEditGroupSetId(e.target.value)
+                                }
+                                className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-60"
+                              >
+                                {groupSets.map((gs) => (
+                                  <option key={gs.id} value={gs.id}>
+                                    {gs.name} ({gs.groups.length} groups)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
                         {editError && (
                           <p className="text-[11px] text-rose-700">
                             {editError}
@@ -831,9 +991,17 @@ export function TeacherAssessmentsPanel({
                     ) : (
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="min-w-0 flex-1 space-y-1">
-                          <p className="text-sm font-bold text-slate-900 line-clamp-2 sm:truncate">
-                            {a.title}
-                          </p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-slate-900 line-clamp-2 sm:truncate">
+                              {a.title}
+                            </p>
+                            {a.isGroupMode && (
+                              <span className="rounded-full bg-violet-50 border border-violet-200 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                Group Mode
+                                {a.groupSet?.name ? ` • ${a.groupSet.name}` : ""}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-slate-500">
                             {a.category.name}
                             {a.category.termKey !== "DEFAULT"
@@ -855,11 +1023,21 @@ export function TeacherAssessmentsPanel({
                               {a.scoreSummary.pendingCount} pending •{" "}
                               {a.scoreSummary.missingCount} missing
                               {a.submissionEnabled && a.submissionSummary
-                                ? ` • ${a.submissionSummary.totalSubmitted}/${a.submissionSummary.totalStudents} Drive links submitted${
-                                    a.submissionSummary.lateCount > 0
-                                      ? ` (${a.submissionSummary.lateCount} late)`
-                                      : ""
-                                  }`
+                                ? a.isGroupMode
+                                  ? ` • ${a.submissionSummary.totalSubmitted}/${
+                                      a.submissionSummary.totalGroups ??
+                                      a.groupSet?.groupCount ??
+                                      0
+                                    } groups Drive links submitted${
+                                      a.submissionSummary.lateCount > 0
+                                        ? ` (${a.submissionSummary.lateCount} late)`
+                                        : ""
+                                    }`
+                                  : ` • ${a.submissionSummary.totalSubmitted}/${a.submissionSummary.totalStudents} Drive links submitted${
+                                      a.submissionSummary.lateCount > 0
+                                        ? ` (${a.submissionSummary.lateCount} late)`
+                                        : ""
+                                    }`
                                 : ""}
                             </p>
                           )}
@@ -873,10 +1051,12 @@ export function TeacherAssessmentsPanel({
                         <div className="flex items-center gap-2 pt-2 border-t border-slate-100 sm:border-0 sm:pt-0 sm:gap-1.5 sm:shrink-0">
                           <Link
                             href={`/subjects/${subjectId}/assessments/${a.id}`}
-                            aria-label={`Grade students for ${a.title}`}
+                            aria-label={`Grade ${a.isGroupMode ? "groups" : "students"} for ${a.title}`}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
                           >
-                            <span>Grade Students</span>
+                            <span>
+                              {a.isGroupMode ? "Grade Groups" : "Grade Students"}
+                            </span>
                             <ArrowRight className="h-3.5 w-3.5" />
                           </Link>
                           <button

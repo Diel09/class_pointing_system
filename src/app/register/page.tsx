@@ -131,7 +131,7 @@ export default function RegisterPage() {
                 type="text"
                 value={institutionalId}
                 onChange={(e) => setInstitutionalId(e.target.value)}
-                placeholder="2026-0123"
+                placeholder="26-012345"
                 className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>

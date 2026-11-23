@@ -105,6 +105,63 @@ async function requireStudentSubmissionContext(assessmentId: string) {
     };
   }
 
+  let group: { id: string; name: string } | null = null;
+  if ((assessment as { isGroupMode?: boolean }).isGroupMode) {
+    const groupSetId = (assessment as { groupSetId?: string | null }).groupSetId;
+    const membership =
+      groupSetId && typeof db.studentGroupMembership?.findUnique === "function"
+        ? await db.studentGroupMembership.findUnique({
+            where: {
+              groupSetId_enrollmentId: {
+                groupSetId,
+                enrollmentId: enrollment.id,
+              },
+            },
+            include: {
+              group: { select: { id: true, name: true } },
+            },
+          })
+        : null;
+
+    if (!membership) {
+      return {
+        ok: false as const,
+        response: jsonError(
+          "You are not assigned to a group for this activity yet. Ask your instructor to assign you to a group.",
+          403,
+          "ERR_NO_GROUP_ASSIGNED"
+        ),
+      };
+    }
+
+    group = membership.group;
+
+    if (typeof db.groupAssessmentScore?.findUnique === "function") {
+      const groupScore = await db.groupAssessmentScore.findUnique({
+        where: {
+          assessmentId_groupId: {
+            assessmentId,
+            groupId: group.id,
+          },
+        },
+        select: { status: true },
+      });
+      if (
+        groupScore &&
+        (groupScore.status === "GRADED" || groupScore.status === "EXCUSED")
+      ) {
+        return {
+          ok: false as const,
+          response: jsonError(
+            "Your group's submission is locked because this assessment has already been graded.",
+            409,
+            "ERR_SUBMISSION_LOCKED"
+          ),
+        };
+      }
+    }
+  }
+
   return {
     ok: true as const,
     data: {
@@ -112,6 +169,7 @@ async function requireStudentSubmissionContext(assessmentId: string) {
       assessment,
       subject: assessment.subject,
       enrollment,
+      group,
     },
   };
 }
@@ -126,7 +184,7 @@ export async function PUT(
     return ctx.response;
   }
 
-  const { user, assessment, subject, enrollment } = ctx.data;
+  const { user, assessment, subject, enrollment, group } = ctx.data;
   const now = new Date();
   const isPastDue = Boolean(assessment.dueAt && now > assessment.dueAt);
 
@@ -195,6 +253,74 @@ export async function PUT(
   const ipAddress = getClientIp(request);
 
   const saved = await db.$transaction(async (tx) => {
+    if (group) {
+      const existing = await tx.groupAssessmentSubmission.findUnique({
+        where: {
+          assessmentId_groupId: {
+            assessmentId: id,
+            groupId: group.id,
+          },
+        },
+        select: { id: true },
+      });
+
+      const submission = await tx.groupAssessmentSubmission.upsert({
+        where: {
+          assessmentId_groupId: {
+            assessmentId: id,
+            groupId: group.id,
+          },
+        },
+        update: {
+          submittedByEnrollmentId: enrollment.id,
+          driveUrl: linkParsed.data.originalUrl,
+          normalizedUrl: linkParsed.data.normalizedUrl,
+          driveResourceId: linkParsed.data.resourceId,
+          status: submissionStatus,
+          accessStatus: persistedAccessStatus,
+          accessCheckedAt: accessResult.checkedAt,
+          studentNote,
+        },
+        create: {
+          assessmentId: id,
+          groupId: group.id,
+          submittedByEnrollmentId: enrollment.id,
+          driveUrl: linkParsed.data.originalUrl,
+          normalizedUrl: linkParsed.data.normalizedUrl,
+          driveResourceId: linkParsed.data.resourceId,
+          status: submissionStatus,
+          accessStatus: persistedAccessStatus,
+          accessCheckedAt: accessResult.checkedAt,
+          studentNote,
+          submittedAt: now,
+        },
+      });
+
+      await recordAuditLog(
+        {
+          actorUserId: user.id,
+          subjectId: subject.id,
+          action: existing
+            ? "GROUP_ASSESSMENT_SUBMISSION_UPDATED"
+            : "GROUP_ASSESSMENT_SUBMISSION_CREATED",
+          targetType: "GroupAssessmentSubmission",
+          targetId: submission.id,
+          afterState: {
+            assessmentId: id,
+            groupId: group.id,
+            groupName: group.name,
+            normalizedUrl: submission.normalizedUrl,
+            status: submission.status,
+            accessStatus: submission.accessStatus,
+          },
+          ipAddress,
+        },
+        tx
+      );
+
+      return submission;
+    }
+
     const existing = await tx.assessmentSubmission.findUnique({
       where: {
         assessmentId_enrollmentId: {
@@ -264,9 +390,13 @@ export async function PUT(
       subjectId: subject.id,
       type: "SUBMISSION_RECEIVED",
       title: `Activity Submission (${subject.code})`,
-      body: `${user.fullName} submitted a Google Drive link for "${assessment.title}"${
-        submissionStatus === "LATE" ? " (Late)" : ""
-      }.`,
+      body: group
+        ? `${user.fullName} (${group.name}) submitted a Google Drive link for "${assessment.title}"${
+            submissionStatus === "LATE" ? " (Late)" : ""
+          }.`
+        : `${user.fullName} submitted a Google Drive link for "${assessment.title}"${
+            submissionStatus === "LATE" ? " (Late)" : ""
+          }.`,
       linkUrl: `/subjects/${subject.id}/assessments/${assessment.id}`,
     },
   ]);
@@ -283,6 +413,7 @@ export async function PUT(
       studentNote: saved.studentNote,
       submittedAt: saved.submittedAt,
       updatedAt: saved.updatedAt,
+      ...(group ? { submittedByName: user.fullName } : {}),
     },
     accessWarning:
       persistedAccessStatus === "UNVERIFIED"
@@ -302,7 +433,7 @@ export async function DELETE(
     return ctx.response;
   }
 
-  const { user, assessment, subject, enrollment } = ctx.data;
+  const { user, assessment, subject, enrollment, group } = ctx.data;
   if (
     assessment.dueAt &&
     new Date() > assessment.dueAt &&
@@ -313,6 +444,50 @@ export async function DELETE(
       400,
       "ERR_SUBMISSION_PAST_DUE"
     );
+  }
+
+  const ipAddress = getClientIp(request);
+
+  if (group) {
+    const existingGroupSub = await db.groupAssessmentSubmission.findUnique({
+      where: {
+        assessmentId_groupId: {
+          assessmentId: id,
+          groupId: group.id,
+        },
+      },
+      select: { id: true, normalizedUrl: true },
+    });
+
+    if (!existingGroupSub) {
+      return jsonError("No submission found to withdraw.", 404, "ERR_NOT_FOUND");
+    }
+
+    await db.$transaction(async (tx) => {
+      await tx.groupAssessmentSubmission.delete({
+        where: { id: existingGroupSub.id },
+      });
+
+      await recordAuditLog(
+        {
+          actorUserId: user.id,
+          subjectId: subject.id,
+          action: "GROUP_ASSESSMENT_SUBMISSION_WITHDRAWN",
+          targetType: "GroupAssessmentSubmission",
+          targetId: existingGroupSub.id,
+          beforeState: {
+            assessmentId: id,
+            groupId: group.id,
+            groupName: group.name,
+            normalizedUrl: existingGroupSub.normalizedUrl,
+          },
+          ipAddress,
+        },
+        tx
+      );
+    });
+
+    return NextResponse.json({ ok: true });
   }
 
   const existing = await db.assessmentSubmission.findUnique({
@@ -328,8 +503,6 @@ export async function DELETE(
   if (!existing) {
     return jsonError("No submission found to withdraw.", 404, "ERR_NOT_FOUND");
   }
-
-  const ipAddress = getClientIp(request);
 
   await db.$transaction(async (tx) => {
     await tx.assessmentSubmission.delete({

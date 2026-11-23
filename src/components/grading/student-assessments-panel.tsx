@@ -11,6 +11,7 @@ import {
   MinusCircle,
   Sparkles,
   Trash2,
+  Users,
   XCircle,
 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
@@ -30,6 +31,13 @@ export interface StudentSubmissionDto {
   studentNote: string | null;
   submittedAt: string;
   updatedAt: string;
+  submittedByName?: string | null;
+}
+
+export interface StudentGroupDto {
+  id: string;
+  name: string;
+  members: { enrollmentId: string; fullName: string; isMe: boolean }[];
 }
 
 export interface StudentAssessmentDto {
@@ -50,6 +58,9 @@ export interface StudentAssessmentDto {
   dueAt?: string | null;
   allowLateSubmissions?: boolean;
   requirePublicLink?: boolean;
+  isGroupMode?: boolean;
+  groupSet?: { id: string; name: string } | null;
+  myGroup?: StudentGroupDto | null;
   mySubmission?: StudentSubmissionDto | null;
   pendingBoost?: {
     count: number;
@@ -482,11 +493,14 @@ export function StudentAssessmentsPanel({
               item.dueAt && Date.now() > new Date(item.dueAt).getTime()
             );
             const isHardClosed = isPastDue && item.allowLateSubmissions === false;
+            const missingRequiredGroup =
+              Boolean(item.isGroupMode) && !item.myGroup;
             const canSubmitLink =
               Boolean(item.submissionEnabled) &&
               !isArchived &&
               !isScoreLocked &&
-              !isHardClosed;
+              !isHardClosed &&
+              !missingRequiredGroup;
             const activeReward =
               eligibleRewards.find((r) => r.id === selectedRewardId) ??
               eligibleRewards[0] ??
@@ -536,6 +550,16 @@ export function StudentAssessmentsPanel({
                       <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
                         {item.category.name}
                       </span>
+                      {item.isGroupMode && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-200 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                          <Users className="h-3 w-3" />
+                          <span>
+                            {item.myGroup
+                              ? `Group: ${item.myGroup.name}`
+                              : "Group Activity"}
+                          </span>
+                        </span>
+                      )}
                       <span
                         className={cn(
                           "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
@@ -559,6 +583,19 @@ export function StudentAssessmentsPanel({
                     {item.description && (
                       <p className="text-xs text-slate-600">
                         {item.description}
+                      </p>
+                    )}
+
+                    {item.isGroupMode && item.myGroup && (
+                      <p className="text-[11px] text-violet-800 bg-violet-50/70 border border-violet-200/80 rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold">Groupmates:</span>
+                        <span>
+                          {item.myGroup.members
+                            .map((m) =>
+                              m.isMe ? `${m.fullName} (You)` : m.fullName
+                            )
+                            .join(", ")}
+                        </span>
                       </p>
                     )}
 
@@ -644,6 +681,12 @@ export function StudentAssessmentsPanel({
 
                 {item.submissionEnabled && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    {missingRequiredGroup ? (
+                      <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        This is a group activity ({item.groupSet?.name ?? "Group Set"}). You are not assigned to a group yet—ask your instructor to add you to a group before submitting.
+                      </p>
+                    ) : (
+                      <>
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                       <div className="flex items-center gap-1.5 flex-wrap text-xs sm:text-[11px]">
                         <Link2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
@@ -667,7 +710,11 @@ export function StudentAssessmentsPanel({
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
                             >
-                              <span>View Submitted Drive Link</span>
+                              <span>
+                                {item.isGroupMode
+                                  ? "View Group Drive Link"
+                                  : "View Submitted Drive Link"}
+                              </span>
                               <ExternalLink className="h-3 w-3" />
                             </a>
                             {item.mySubmission.accessStatus ===
@@ -679,7 +726,9 @@ export function StudentAssessmentsPanel({
                           </>
                         ) : (
                           <span className="font-medium text-slate-600">
-                            Google Drive link required (not submitted yet)
+                            {item.isGroupMode
+                              ? "Shared group Google Drive link required (not submitted yet)"
+                              : "Google Drive link required (not submitted yet)"}
                           </span>
                         )}
                       </div>
@@ -728,6 +777,9 @@ export function StudentAssessmentsPanel({
 
                     {item.mySubmission && (
                       <p className="text-[11px] sm:text-[10px] text-slate-500">
+                        {item.isGroupMode && item.mySubmission.submittedByName
+                          ? `Submitted by ${item.mySubmission.submittedByName} • `
+                          : ""}
                         Updated{" "}
                         {new Date(
                           item.mySubmission.updatedAt
@@ -748,6 +800,8 @@ export function StudentAssessmentsPanel({
                         Submission deadline passed and late submissions are
                         closed.
                       </p>
+                    )}
+                      </>
                     )}
                   </div>
                 )}

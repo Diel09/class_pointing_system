@@ -227,24 +227,7 @@ npm run push:vapid
 ```bash
 npx prisma generate
 npm run db:push
-npm run db:seed
 ```
-
-> **Warning:** `npm run db:seed` (`prisma/seed.ts`) creates **development-only** dummy accounts with password `Password123!`. **Do not run `npm run db:seed` against a production database.**
-
-#### Seeded Development Accounts & Data
-
-| Role | Email | Institutional ID | Password | Notes |
-|---|---|---|---|---|
-| **Admin** | `admin@classpulse.local` | `ADM-0001` | `Password123!` | System Administrator |
-| **Teacher 1** | `teacher1@classpulse.local` | `EMP-1001` | `Password123!` | Owns `CS 101` (Invite code: `CS101SEC`) |
-| **Teacher 2** | `teacher2@classpulse.local` | `EMP-1002` | `Password123!` | Owns `IT 204` (Invite code: `IT204SEC`) |
-| **Students 1–10** | `student1@classpulse.local` .. `student10@classpulse.local` | `2026-0001` .. `2026-0010` | `Password123!` | Students 1–5 enrolled in `CS 101`; 1–3 in `IT 204` |
-
-- **Seeded Active Term:** `1st Sem 2026-2027`
-- **Seeded Teacher Invite Code:** `TEACH-2026` (max 25 uses)
-- **Seeded `CS 101` Defaults:** 4 Merit/Demerit presets, 2 Reward items (`Quiz / Exam Score Boost`, `Deadline Extension Pass`), single-term grade categories, Philippine `1.00`–`5.00` grade scale, and 2 sample assessments.
-
 ### 4. Start the Development Server
 
 ```bash
