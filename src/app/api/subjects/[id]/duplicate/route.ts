@@ -1,8 +1,12 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit";
 import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
-import { duplicateSubjectInTransaction } from "@/lib/subjects/duplicate-subject";
+import {
+  duplicateSubjectInTransaction,
+  fetchDuplicateSubjectSource,
+} from "@/lib/subjects/duplicate-subject";
 import {
   duplicateSubjectSchema,
   isSameSectionName,
@@ -44,14 +48,54 @@ export async function POST(
 
   const ipAddress = getClientIp(request);
 
-  const result = await db.$transaction((tx) =>
-    duplicateSubjectInTransaction(tx, {
-      sourceSubjectId: owner.data.subject.id,
-      newSection: parsed.data.section,
-      actorUserId: owner.data.user.id,
-      ipAddress,
-    })
-  );
+  try {
+    const prefetchedSource = await fetchDuplicateSubjectSource(
+      owner.data.subject.id
+    );
+    if (!prefetchedSource) {
+      return jsonError("Subject not found.", 404, "ERR_NOT_FOUND");
+    }
 
-  return NextResponse.json(result, { status: 201 });
+    const result = await db.$transaction(
+      (tx) =>
+        duplicateSubjectInTransaction(tx, {
+          sourceSubjectId: owner.data.subject.id,
+          newSection: parsed.data.section,
+          actorUserId: owner.data.user.id,
+          ipAddress,
+          prefetchedSource,
+        }),
+      { maxWait: 5000, timeout: 20000 }
+    );
+
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    console.error("Duplicate subject error:", error);
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2028") {
+        return jsonError(
+          "Duplication timed out while saving to the database. Please try again.",
+          504,
+          "ERR_TIMEOUT"
+        );
+      }
+      if (error.code === "P2025") {
+        return jsonError("Subject not found.", 404, "ERR_NOT_FOUND");
+      }
+      if (error.code === "P2002") {
+        return jsonError(
+          "A conflicting invite code occurred while duplicating. Please try again.",
+          409,
+          "ERR_CONFLICT"
+        );
+      }
+    }
+
+    return jsonError(
+      "Failed to duplicate section. Please try again.",
+      500,
+      "ERR_INTERNAL"
+    );
+  }
 }

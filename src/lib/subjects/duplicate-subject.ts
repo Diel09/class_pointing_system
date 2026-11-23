@@ -1,5 +1,7 @@
+import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { recordAuditLog } from "@/lib/audit";
+import { db } from "@/lib/db";
 import { generateInviteCode } from "@/lib/validations/subject";
 
 export type DuplicateSubjectCopiedCounts = {
@@ -8,6 +10,38 @@ export type DuplicateSubjectCopiedCounts = {
   meritPresets: number;
   rewardItems: number;
 };
+
+const DUPLICATE_SOURCE_INCLUDE = {
+  gradeCategories: {
+    orderBy: [{ termKey: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
+  },
+  gradeScaleRules: {
+    orderBy: [{ sortOrder: "asc" }, { minPct: "desc" }],
+  },
+  meritPresets: {
+    orderBy: [{ isArchived: "asc" }, { type: "asc" }, { createdAt: "asc" }],
+  },
+  rewardItems: {
+    orderBy: [{ createdAt: "asc" }],
+  },
+} satisfies Prisma.SubjectInclude;
+
+export type DuplicateSubjectSource = Prisma.SubjectGetPayload<{
+  include: typeof DUPLICATE_SOURCE_INCLUDE;
+}>;
+
+/**
+ * Fetches a subject and its cloneable configuration relations for duplication.
+ */
+export async function fetchDuplicateSubjectSource(
+  sourceSubjectId: string,
+  client: Prisma.TransactionClient | typeof db = db
+): Promise<DuplicateSubjectSource | null> {
+  return client.subject.findUnique({
+    where: { id: sourceSubjectId },
+    include: DUPLICATE_SOURCE_INCLUDE,
+  });
+}
 
 async function generateUniqueInviteCode(
   tx: Prisma.TransactionClient
@@ -39,27 +73,23 @@ export async function duplicateSubjectInTransaction(
     newSection: string;
     actorUserId: string;
     ipAddress: string | null;
+    prefetchedSource?: DuplicateSubjectSource;
   }
 ) {
-  const { sourceSubjectId, newSection, actorUserId, ipAddress } = params;
+  const {
+    sourceSubjectId,
+    newSection,
+    actorUserId,
+    ipAddress,
+    prefetchedSource,
+  } = params;
 
-  const source = await tx.subject.findUniqueOrThrow({
-    where: { id: sourceSubjectId },
-    include: {
-      gradeCategories: {
-        orderBy: [{ termKey: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-      },
-      gradeScaleRules: {
-        orderBy: [{ sortOrder: "asc" }, { minPct: "desc" }],
-      },
-      meritPresets: {
-        orderBy: [{ isArchived: "asc" }, { type: "asc" }, { createdAt: "asc" }],
-      },
-      rewardItems: {
-        orderBy: [{ createdAt: "asc" }],
-      },
-    },
-  });
+  const source =
+    prefetchedSource ??
+    (await tx.subject.findUniqueOrThrow({
+      where: { id: sourceSubjectId },
+      include: DUPLICATE_SOURCE_INCLUDE,
+    }));
 
   const inviteCode = await generateUniqueInviteCode(tx);
 
@@ -95,21 +125,26 @@ export async function duplicateSubjectInTransaction(
   });
 
   const categoryIdMap = new Map<string, string>();
-  for (const category of source.gradeCategories) {
-    const clonedCategory = await tx.gradeCategory.create({
-      data: {
-        subjectId: created.id,
-        termKey: category.termKey,
-        name: category.name,
-        categoryType: category.categoryType,
-        weightPct: category.weightPct,
-        aggregationMethod: category.aggregationMethod,
-        targetPointsCap: category.targetPointsCap,
-        sortOrder: category.sortOrder,
-      },
-      select: { id: true },
+  const categoryRows = source.gradeCategories.map((category) => {
+    const newId = randomUUID();
+    categoryIdMap.set(category.id, newId);
+    return {
+      id: newId,
+      subjectId: created.id,
+      termKey: category.termKey,
+      name: category.name,
+      categoryType: category.categoryType,
+      weightPct: category.weightPct,
+      aggregationMethod: category.aggregationMethod,
+      targetPointsCap: category.targetPointsCap,
+      sortOrder: category.sortOrder,
+    };
+  });
+
+  if (categoryRows.length > 0) {
+    await tx.gradeCategory.createMany({
+      data: categoryRows,
     });
-    categoryIdMap.set(category.id, clonedCategory.id);
   }
 
   if (source.gradeScaleRules.length > 0) {
