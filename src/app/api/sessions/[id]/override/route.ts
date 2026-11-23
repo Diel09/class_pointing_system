@@ -45,7 +45,10 @@ export async function PATCH(
     );
   }
 
-  const targetPoints = getPointsForAttendanceStatus(parsed.data.status, session);
+  const pointsEnabled = subject.pointsEnabled !== false;
+  const targetPoints = pointsEnabled
+    ? getPointsForAttendanceStatus(parsed.data.status, session)
+    : 0;
   const ipAddress = getClientIp(request);
 
   const result = await db.$transaction(async (tx) => {
@@ -73,12 +76,16 @@ export async function PATCH(
 
     const previousStatus = existingRecord?.status ?? "UNRECORDED";
     const previousPoints = existingRecord?.pointsAwarded ?? 0;
-    const rawDelta = targetPoints - previousPoints;
+    const rawDelta = pointsEnabled ? targetPoints - previousPoints : 0;
 
-    const newBalance = subject.allowNegativeBalance
+    const newBalance = !pointsEnabled
+      ? locked.availableBalance
+      : subject.allowNegativeBalance
       ? locked.availableBalance + rawDelta
       : Math.max(0, locked.availableBalance + rawDelta);
-    const actualDelta = newBalance - locked.availableBalance;
+    const actualDelta = pointsEnabled
+      ? newBalance - locked.availableBalance
+      : 0;
 
     const record = existingRecord
       ? await tx.attendanceRecord.update({
@@ -108,7 +115,7 @@ export async function PATCH(
           },
         });
 
-    if (actualDelta !== 0) {
+    if (pointsEnabled && actualDelta !== 0) {
       await tx.subjectEnrollment.update({
         where: { id: enrollment.id },
         data: { availableBalance: newBalance },

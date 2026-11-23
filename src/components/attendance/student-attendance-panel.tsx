@@ -27,12 +27,15 @@ interface StudentSessionItem {
 
 interface StudentAttendancePanelProps {
   subjectId: string;
+  pointsEnabled?: boolean;
 }
 
 export function StudentAttendancePanel({
   subjectId,
+  pointsEnabled: initialPointsEnabled = true,
 }: StudentAttendancePanelProps) {
   const { data, isLoading } = useQuery<{
+    pointsEnabled?: boolean;
     sessions: StudentSessionItem[];
     openSessionId: string | null;
   }>({
@@ -45,6 +48,7 @@ export function StudentAttendancePanel({
         throw new Error("Unable to load attendance.");
       }
       return (await res.json()) as {
+        pointsEnabled?: boolean;
         sessions: StudentSessionItem[];
         openSessionId: string | null;
       };
@@ -52,6 +56,7 @@ export function StudentAttendancePanel({
     refetchInterval: 10_000,
   });
 
+  const pointsEnabled = data?.pointsEnabled ?? initialPointsEnabled;
   const sessions = data?.sessions ?? [];
   const openSession = sessions.find((s) => s.status === "OPEN") ?? null;
 
@@ -83,12 +88,15 @@ export function StudentAttendancePanel({
               </span>
             </div>
             <p className="text-xs text-emerald-800">
-              Present (+{openSession.presentPoints} pts) until{" "}
+              Present
+              {pointsEnabled ? ` (+${openSession.presentPoints} pts)` : ""}{" "}
+              until{" "}
               {new Date(openSession.presentCutoffAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
               })}{" "}
-              • Late (+{openSession.latePoints} pts) until{" "}
+              • Late{pointsEnabled ? ` (+${openSession.latePoints} pts)` : ""}{" "}
+              until{" "}
               {new Date(openSession.lateCutoffAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -110,8 +118,11 @@ export function StudentAttendancePanel({
           <div className="flex items-center gap-2 text-xs text-indigo-900">
             <AttendanceStatusBadge status={openSession.myRecord.status} />
             <span className="font-semibold">
-              You are checked in for today&apos;s session (+
-              {openSession.myRecord.pointsAwarded} pts).
+              You are checked in for today&apos;s session
+              {pointsEnabled
+                ? ` (+${openSession.myRecord.pointsAwarded} pts)`
+                : ""}
+              .
             </span>
           </div>
         </div>
@@ -182,9 +193,11 @@ export function StudentAttendancePanel({
                     </p>
                   </div>
 
-                  <span className="text-xs font-bold text-slate-800">
-                    {rec ? `+${rec.pointsAwarded} pts` : "0 pts"}
-                  </span>
+                  {pointsEnabled && (
+                    <span className="text-xs font-bold text-slate-800">
+                      {rec ? `+${rec.pointsAwarded} pts` : "0 pts"}
+                    </span>
+                  )}
                 </div>
               );
             })}

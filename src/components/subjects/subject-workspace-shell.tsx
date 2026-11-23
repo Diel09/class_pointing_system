@@ -22,7 +22,7 @@ import { DuplicateSubjectModal } from "@/components/subjects/duplicate-subject-m
 import { EditSubjectModal } from "@/components/subjects/edit-subject-modal";
 import {
   CO_TEACHER_SUBJECT_TABS,
-  STUDENT_SUBJECT_TABS,
+  getStudentSubjectTabs,
   SubjectWorkspaceTabs,
   TEACHER_SUBJECT_TABS,
   type SubjectTabKey,
@@ -49,6 +49,7 @@ export interface SubjectDetailDto {
   startDate: string | null;
   endDate: string | null;
   isArchived: boolean;
+  pointsEnabled: boolean;
   allowNegativeBalance: boolean;
   allowP2pTransfers: boolean;
   p2pMaxPerTransfer: number | null;
@@ -295,8 +296,16 @@ export function SubjectWorkspaceShell({
                 <SubjectWorkspaceTabs
                   subjectId={subjectId}
                   ariaLabel="Student subject sections"
-                  tabs={STUDENT_SUBJECT_TABS}
-                  activeTab={activeTab === "roster" ? "grades" : activeTab}
+                  tabs={getStudentSubjectTabs(
+                    subjectData.subject.pointsEnabled !== false
+                  )}
+                  activeTab={
+                    activeTab === "roster" ||
+                    (activeTab === "points" &&
+                      subjectData.subject.pointsEnabled === false)
+                      ? "grades"
+                      : activeTab
+                  }
                 />
               </>
             )}
@@ -342,14 +351,29 @@ export function SubjectWorkspaceShell({
               section: subjectData.subject.section,
               startDate: subjectData.subject.startDate,
               endDate: subjectData.subject.endDate,
+              pointsEnabled: subjectData.subject.pointsEnabled !== false,
             }}
             open={showEditModal}
             onClose={() => setShowEditModal(false)}
             onUpdated={async () => {
-              await queryClient.invalidateQueries({
-                queryKey: ["subject", subjectId],
-              });
-              await queryClient.invalidateQueries({ queryKey: ["subjects"] });
+              await Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: ["subject", subjectId],
+                }),
+                queryClient.invalidateQueries({ queryKey: ["subjects"] }),
+                queryClient.invalidateQueries({
+                  queryKey: ["subject-computation", subjectId],
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: ["subject-standing", subjectId],
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: ["subject-sessions", subjectId],
+                }),
+                queryClient.invalidateQueries({
+                  queryKey: ["subject-roster", subjectId],
+                }),
+              ]);
             }}
           />
 

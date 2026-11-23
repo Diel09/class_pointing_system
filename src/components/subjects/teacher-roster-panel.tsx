@@ -620,9 +620,11 @@ export function TeacherRosterPanel({
                         </div>
                       </div>
                       <div className="flex items-center gap-2.5 shrink-0">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-                          {entry.availableBalance} pts
-                        </span>
+                        {subject.pointsEnabled !== false && (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
+                            {entry.availableBalance} pts
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() =>

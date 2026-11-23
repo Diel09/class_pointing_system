@@ -98,6 +98,17 @@ export const ALL_SUBJECT_TAB_KEYS: readonly SubjectTabKey[] = [
 ];
 
 /**
+ * Returns the student workspace tabs, hiding Points & Rewards when points are disabled for the section.
+ */
+export function getStudentSubjectTabs(
+  pointsEnabled: boolean
+): readonly SubjectTabItem[] {
+  return pointsEnabled
+    ? STUDENT_SUBJECT_TABS
+    : STUDENT_SUBJECT_TABS.filter((tab) => tab.key !== "points");
+}
+
+/**
  * Resolves a raw tab query value to a valid tab key within the allowed list.
  */
 export function resolveSubjectTab(

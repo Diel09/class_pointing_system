@@ -37,6 +37,7 @@ interface CheckInSuccess {
   };
   availableBalance: number;
   pointsAwarded: number;
+  pointsEnabled?: boolean;
   mirrorToken?: string;
 }
 
@@ -252,17 +253,21 @@ export default function StudentCheckInPage() {
               <div className="space-y-1">
                 <div className="flex items-center justify-center gap-2">
                   <AttendanceStatusBadge status={success.record.status} />
-                  <span className="text-sm font-bold text-emerald-900">
-                    +{success.pointsAwarded} pts
-                  </span>
+                  {success.pointsEnabled !== false && (
+                    <span className="text-sm font-bold text-emerald-900">
+                      +{success.pointsAwarded} pts
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-emerald-800">
                   Checked in at {Math.round(success.record.distanceMeters)}m
                   from classroom anchor.
                 </p>
-                <p className="text-xs font-semibold text-emerald-900">
-                  Updated Subject Balance: {success.availableBalance} pts
-                </p>
+                {success.pointsEnabled !== false && (
+                  <p className="text-xs font-semibold text-emerald-900">
+                    Updated Subject Balance: {success.availableBalance} pts
+                  </p>
+                )}
               </div>
               <Link
                 href={`/subjects/${subjectId}`}

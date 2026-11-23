@@ -11,6 +11,7 @@ export interface EditableSubjectTarget {
   section: string;
   startDate: string | null;
   endDate: string | null;
+  pointsEnabled: boolean;
 }
 
 interface EditSubjectModalProps {
@@ -34,6 +35,7 @@ export function EditSubjectModal({
   const [title, setTitle] = useState(subject.title);
   const [startDate, setStartDate] = useState(toDateInputValue(subject.startDate));
   const [endDate, setEndDate] = useState(toDateInputValue(subject.endDate));
+  const [pointsEnabled, setPointsEnabled] = useState(subject.pointsEnabled);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +46,7 @@ export function EditSubjectModal({
       setTitle(subject.title);
       setStartDate(toDateInputValue(subject.startDate));
       setEndDate(toDateInputValue(subject.endDate));
+      setPointsEnabled(subject.pointsEnabled);
       setError(null);
     }
   }, [open, subject]);
@@ -72,6 +75,7 @@ export function EditSubjectModal({
           title,
           startDate: startDate || null,
           endDate: endDate || null,
+          pointsEnabled,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -207,6 +211,27 @@ export function EditSubjectModal({
               min={startDate || undefined}
               onChange={(e) => setEndDate(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+            <div>
+              <label
+                htmlFor="edit-sub-points-enabled"
+                className="block text-xs font-semibold text-slate-800"
+              >
+                Enable Points &amp; Economy
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Allow attendance points, merits/demerits, P2P transfers, and reward redemptions in this section.
+              </p>
+            </div>
+            <input
+              id="edit-sub-points-enabled"
+              type="checkbox"
+              checked={pointsEnabled}
+              onChange={(e) => setPointsEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
             />
           </div>
 

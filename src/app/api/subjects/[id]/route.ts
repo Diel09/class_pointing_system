@@ -72,6 +72,7 @@ export async function GET(
       startDate: subject.startDate,
       endDate: subject.endDate,
       isArchived: subject.isArchived,
+      pointsEnabled: subject.pointsEnabled,
       standingVisible: subject.standingVisible,
       allowNegativeBalance: subject.allowNegativeBalance,
       allowP2pTransfers: subject.allowP2pTransfers,
@@ -179,6 +180,9 @@ export async function PATCH(
         ...(parsed.data.isArchived !== undefined
           ? { isArchived: parsed.data.isArchived }
           : {}),
+        ...(parsed.data.pointsEnabled !== undefined
+          ? { pointsEnabled: parsed.data.pointsEnabled }
+          : {}),
         ...(parsed.data.allowNegativeBalance !== undefined
           ? { allowNegativeBalance: parsed.data.allowNegativeBalance }
           : {}),
@@ -222,6 +226,7 @@ export async function PATCH(
           startDate: prev.startDate?.toISOString() ?? null,
           endDate: prev.endDate?.toISOString() ?? null,
           isArchived: prev.isArchived,
+          pointsEnabled: prev.pointsEnabled,
           allowNegativeBalance: prev.allowNegativeBalance,
           allowP2pTransfers: prev.allowP2pTransfers,
           p2pMaxPerTransfer: prev.p2pMaxPerTransfer,
@@ -238,6 +243,7 @@ export async function PATCH(
           startDate: subject.startDate?.toISOString() ?? null,
           endDate: subject.endDate?.toISOString() ?? null,
           isArchived: subject.isArchived,
+          pointsEnabled: subject.pointsEnabled,
           allowNegativeBalance: subject.allowNegativeBalance,
           allowP2pTransfers: subject.allowP2pTransfers,
           p2pMaxPerTransfer: subject.p2pMaxPerTransfer,

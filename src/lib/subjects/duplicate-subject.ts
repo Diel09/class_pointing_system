@@ -104,6 +104,7 @@ export async function duplicateSubjectInTransaction(
       endDate: source.endDate,
       inviteCode,
       isArchived: false,
+      pointsEnabled: source.pointsEnabled,
       allowNegativeBalance: source.allowNegativeBalance,
       allowP2pTransfers: source.allowP2pTransfers,
       p2pMaxPerTransfer: source.p2pMaxPerTransfer,

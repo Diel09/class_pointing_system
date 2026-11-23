@@ -67,7 +67,13 @@ export async function POST(request: Request) {
     where: { id: parsedQr.sessionId },
     include: {
       subject: {
-        select: { id: true, code: true, title: true, isArchived: true },
+        select: {
+          id: true,
+          code: true,
+          title: true,
+          isArchived: true,
+          pointsEnabled: true,
+        },
       },
     },
   });
@@ -153,7 +159,10 @@ export async function POST(request: Request) {
 
   const attendanceStatus =
     now <= session.presentCutoffAt ? ("PRESENT" as const) : ("LATE" as const);
-  const pointsAwarded = getPointsForAttendanceStatus(attendanceStatus, session);
+  const pointsEnabled = session.subject.pointsEnabled !== false;
+  const pointsAwarded = pointsEnabled
+    ? getPointsForAttendanceStatus(attendanceStatus, session)
+    : 0;
 
   const env = getServerEnv();
   const { deviceId, token: deviceMirrorToken } = await ensureDeviceCookie(
@@ -212,7 +221,9 @@ export async function POST(request: Request) {
         };
       }
 
-      const newBalance = locked.availableBalance + pointsAwarded;
+      const newBalance = pointsEnabled
+        ? locked.availableBalance + pointsAwarded
+        : locked.availableBalance;
 
       const createdRecord = await tx.attendanceRecord.create({
         data: {
@@ -230,28 +241,30 @@ export async function POST(request: Request) {
         },
       });
 
-      if (pointsAwarded !== 0) {
+      if (pointsEnabled && pointsAwarded !== 0) {
         await tx.subjectEnrollment.update({
           where: { id: enrollment.id },
           data: { availableBalance: newBalance },
         });
       }
 
-      await tx.pointLedgerEntry.create({
-        data: {
-          enrollmentId: enrollment.id,
-          subjectId: session.subjectId,
-          entryType: "ATTENDANCE",
-          availableDelta: pointsAwarded,
-          escrowDelta: 0,
-          availableAfter: newBalance,
-          escrowAfter: locked.escrowedBalance,
-          referenceType: "AttendanceSession",
-          referenceId: session.id,
-          note: `${attendanceStatus} check-in (${Math.round(geofence.distanceMeters)}m from anchor)`,
-          actorUserId: student.id,
-        },
-      });
+      if (pointsEnabled) {
+        await tx.pointLedgerEntry.create({
+          data: {
+            enrollmentId: enrollment.id,
+            subjectId: session.subjectId,
+            entryType: "ATTENDANCE",
+            availableDelta: pointsAwarded,
+            escrowDelta: 0,
+            availableAfter: newBalance,
+            escrowAfter: locked.escrowedBalance,
+            referenceType: "AttendanceSession",
+            referenceId: session.id,
+            note: `${attendanceStatus} check-in (${Math.round(geofence.distanceMeters)}m from anchor)`,
+            actorUserId: student.id,
+          },
+        });
+      }
 
       await recordAuditLog(
         {
@@ -338,7 +351,9 @@ export async function POST(request: Request) {
       subjectId: session.subjectId,
       type: "ATTENDANCE_CHECKIN",
       title: `Attendance Recorded (${session.subject.code})`,
-      body: `Marked ${outcome.record.status} (+${pointsAwarded} pts).`,
+      body: pointsEnabled
+        ? `Marked ${outcome.record.status} (+${pointsAwarded} pts).`
+        : `Marked ${outcome.record.status}.`,
       linkUrl: `/subjects/${session.subjectId}`,
     },
   ]);
@@ -348,6 +363,7 @@ export async function POST(request: Request) {
       record: outcome.record,
       availableBalance: outcome.availableBalance,
       pointsAwarded,
+      pointsEnabled,
       mirrorToken: deviceMirrorToken,
       subject: {
         id: session.subject.id,

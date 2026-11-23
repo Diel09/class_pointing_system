@@ -57,6 +57,7 @@ export async function GET(
   });
 
   return NextResponse.json({
+    pointsEnabled: subject.pointsEnabled,
     standingVisible: subject.standingVisible,
     lateAttendanceCreditPct: Number(subject.lateAttendanceCreditPct),
     termSplitConfig: parseTermSplitConfig(subject.termSplitConfig),
@@ -145,6 +146,16 @@ export async function PUT(
           `Cannot change "${existing.name}" away from Assessment type while it contains assessments.`,
           409,
           "ERR_CATEGORY_HAS_ASSESSMENTS"
+        );
+      }
+    }
+    if (owner.data.subject.pointsEnabled === false && cat.categoryType === "POINTS_PARTICIPATION") {
+      const existing = cat.id ? existingById.get(cat.id) : null;
+      if (!existing || existing.categoryType !== "POINTS_PARTICIPATION") {
+        return jsonError(
+          "Enable Points & Economy before adding a Points Participation grade category.",
+          400,
+          "ERR_POINTS_DISABLED"
         );
       }
     }

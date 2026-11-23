@@ -54,6 +54,7 @@ export async function GET(
     });
 
     return NextResponse.json({
+      pointsEnabled: member.data.subject.pointsEnabled,
       sessions: formatted,
       openSessionId:
         sessions.find((session) => session.status === "OPEN")?.id ?? null,
@@ -83,6 +84,7 @@ export async function GET(
   });
 
   return NextResponse.json({
+    pointsEnabled: member.data.subject.pointsEnabled,
     sessions: formatted,
     openSessionId:
       sessions.find((session) => session.status === "OPEN")?.id ?? null,
@@ -144,6 +146,9 @@ export async function POST(
   );
   const qrSecret = generateSessionQrSecret();
   const ipAddress = getClientIp(request);
+  const pointsEnabled = owner.data.subject.pointsEnabled !== false;
+  const presentPoints = pointsEnabled ? parsed.data.presentPoints : 0;
+  const latePoints = pointsEnabled ? parsed.data.latePoints : 0;
 
   const session = await db.$transaction(async (tx) => {
     const created = await tx.attendanceSession.create({
@@ -160,8 +165,8 @@ export async function POST(
         startedAt: now,
         presentCutoffAt,
         lateCutoffAt,
-        presentPoints: parsed.data.presentPoints,
-        latePoints: parsed.data.latePoints,
+        presentPoints,
+        latePoints,
       },
     });
 

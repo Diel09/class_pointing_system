@@ -2,7 +2,12 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit";
-import { jsonError, requireSubjectMember } from "@/lib/auth/guards";
+import {
+  jsonError,
+  POINTS_DISABLED_MESSAGE,
+  pointsDisabledError,
+  requireSubjectMember,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { dispatchNotifications } from "@/lib/notifications/dispatch";
 import { validateP2pLimits } from "@/lib/points/p2p-limits";
@@ -52,6 +57,10 @@ export async function POST(
       400,
       "ERR_SUBJECT_ARCHIVED"
     );
+  }
+
+  if (subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   if (!subject.allowP2pTransfers) {
@@ -126,6 +135,13 @@ export async function POST(
         throw new TransferRejectedError(
           "Cannot transfer points on an archived subject.",
           "ERR_SUBJECT_ARCHIVED",
+          400
+        );
+      }
+      if (liveSubject.pointsEnabled === false) {
+        throw new TransferRejectedError(
+          POINTS_DISABLED_MESSAGE,
+          "ERR_POINTS_DISABLED",
           400
         );
       }

@@ -194,6 +194,7 @@ model Subject {
   endDate                 DateTime?
   inviteCode              String   @unique
   isArchived              Boolean  @default(false)
+  pointsEnabled           Boolean  @default(true)
   allowNegativeBalance    Boolean  @default(false)
   allowP2pTransfers       Boolean  @default(true)
   p2pMaxPerTransfer       Int?

@@ -82,6 +82,7 @@ describe("POST /api/subjects/[id]/duplicate", () => {
       endDate: null,
       inviteCode: "OLD12345",
       isArchived: false,
+      pointsEnabled: false,
       allowNegativeBalance: false,
       allowP2pTransfers: true,
       p2pMaxPerTransfer: null,
@@ -183,6 +184,13 @@ describe("POST /api/subjects/[id]/duplicate", () => {
     );
 
     expect(res.status).toBe(201);
+    expect(subjectCreateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          pointsEnabled: false,
+        }),
+      })
+    );
     expect(transactionMock).toHaveBeenCalledWith(expect.any(Function), {
       maxWait: 5000,
       timeout: 20000,

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { jsonError, requireSubjectMember } from "@/lib/auth/guards";
+import {
+  jsonError,
+  pointsDisabledError,
+  requireSubjectMember,
+} from "@/lib/auth/guards";
 import { signP2pQrPayload } from "@/lib/points/p2p-qr";
 import { p2pQrQuerySchema } from "@/lib/validations/points";
 
@@ -28,6 +32,10 @@ export async function GET(
       400,
       "ERR_SUBJECT_ARCHIVED"
     );
+  }
+
+  if (subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   if (!subject.allowP2pTransfers) {

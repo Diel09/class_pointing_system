@@ -200,6 +200,9 @@ export async function POST(request: Request) {
         ...(parsed.data.endDate !== undefined
           ? { endDate: parsed.data.endDate }
           : {}),
+        ...(parsed.data.pointsEnabled !== undefined
+          ? { pointsEnabled: parsed.data.pointsEnabled }
+          : {}),
         inviteCode,
       },
       include: {
@@ -236,6 +239,7 @@ export async function POST(request: Request) {
           section: created.section,
           startDate: created.startDate?.toISOString() ?? null,
           endDate: created.endDate?.toISOString() ?? null,
+          pointsEnabled: created.pointsEnabled,
           inviteCode: created.inviteCode,
         },
         ipAddress,

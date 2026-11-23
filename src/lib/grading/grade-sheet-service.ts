@@ -136,6 +136,7 @@ export async function buildSubjectGradeSheetData(options: {
           section: true,
           startDate: true,
           endDate: true,
+          pointsEnabled: true,
           standingVisible: true,
           lateAttendanceCreditPct: true,
           termSplitConfig: true,
@@ -361,7 +362,8 @@ export async function buildSubjectGradeSheetData(options: {
       })),
       lateAttendanceCreditPct,
       earnedMeritAndAttendancePts: earnedPts,
-      hasSubjectPointActivity: activityCount > 0,
+      hasSubjectPointActivity:
+        subject.pointsEnabled !== false && activityCount > 0,
       termSplitConfig,
       gradeScaleRules: effectiveScale,
       manualStandingOverride: enrollment.manualStandingOverride,

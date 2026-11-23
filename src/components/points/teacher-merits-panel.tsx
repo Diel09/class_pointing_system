@@ -44,6 +44,7 @@ export interface MeritRosterStudent {
 interface TeacherMeritsPanelProps {
   subjectId: string;
   isArchived: boolean;
+  pointsEnabled?: boolean;
   allowNegativeBalance: boolean;
   roster: MeritRosterStudent[];
   isOwner?: boolean;
@@ -52,6 +53,7 @@ interface TeacherMeritsPanelProps {
 export function TeacherMeritsPanel({
   subjectId,
   isArchived,
+  pointsEnabled = true,
   allowNegativeBalance,
   roster,
   isOwner = true,
@@ -339,7 +341,7 @@ export function TeacherMeritsPanel({
           </p>
         </div>
 
-        {isOwner && (
+        {isOwner && pointsEnabled && (
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2">
             <div className="space-y-0.5">
               <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
@@ -375,6 +377,12 @@ export function TeacherMeritsPanel({
         )}
       </div>
 
+      {!pointsEnabled && (
+        <div className="rounded-xl bg-slate-100 border border-slate-200 px-4 py-3 text-xs text-slate-700">
+          Points &amp; Economy is disabled for this section. Merit/demerit presets and point adjustments are locked while existing balances and ledger history remain preserved.
+        </div>
+      )}
+
       {isArchived && (
         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-800">
           This subject is archived. Unarchive it to award merits or demerits.
@@ -400,6 +408,7 @@ export function TeacherMeritsPanel({
                   </button>
                   <button
                     type="button"
+                    disabled={!pointsEnabled || isArchived}
                     onClick={() => {
                       if (showPresetForm && !editingPresetId) {
                         resetPresetForm();
@@ -412,7 +421,7 @@ export function TeacherMeritsPanel({
                         setShowPresetForm(true);
                       }
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
+                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     <Plus className="h-3 w-3" />
                     <span>New Preset</span>
@@ -585,7 +594,7 @@ export function TeacherMeritsPanel({
                         )}
                       </button>
 
-                      {isOwner && (
+                      {isOwner && pointsEnabled && (
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
@@ -881,7 +890,9 @@ export function TeacherMeritsPanel({
 
           <button
             type="submit"
-            disabled={isArchived || awardSubmitting || roster.length === 0}
+            disabled={
+              !pointsEnabled || isArchived || awardSubmitting || roster.length === 0
+            }
             className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
           >
             <span>

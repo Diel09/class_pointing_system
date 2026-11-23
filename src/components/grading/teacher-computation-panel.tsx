@@ -63,6 +63,7 @@ interface CategoryDraft {
 }
 
 interface ComputationResponse {
+  pointsEnabled?: boolean;
   standingVisible: boolean;
   lateAttendanceCreditPct: number;
   termSplitConfig: TermSplitConfig | null;
@@ -427,6 +428,7 @@ export function TeacherComputationPanel({
   const displayedTerms = splitEnabled
     ? terms
     : [{ key: "DEFAULT", label: "Overall Categories", weightPct: 100 }];
+  const pointsEnabled = compData?.pointsEnabled !== false;
 
   return (
     <section className="space-y-6">
@@ -502,6 +504,12 @@ export function TeacherComputationPanel({
               <span>Multi-Term Split</span>
             </label>
           </div>
+
+          {!pointsEnabled && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              Points &amp; Economy is disabled for this section. Points Participation categories are inactive and their weight re-normalizes across active categories.
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
@@ -678,9 +686,12 @@ export function TeacherComputationPanel({
                           >
                             <option value="ASSESSMENT">Assessment</option>
                             <option value="ATTENDANCE">Attendance</option>
-                            <option value="POINTS_PARTICIPATION">
-                              Points Participation
-                            </option>
+                            {(pointsEnabled ||
+                              cat.categoryType === "POINTS_PARTICIPATION") && (
+                              <option value="POINTS_PARTICIPATION">
+                                Points Participation
+                              </option>
+                            )}
                           </select>
 
                           {cat.categoryType === "ASSESSMENT" ? (
@@ -710,34 +721,41 @@ export function TeacherComputationPanel({
                               </option>
                             </select>
                           ) : cat.categoryType === "POINTS_PARTICIPATION" ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                min={1}
-                                placeholder="Cap"
-                                aria-label="Target points cap"
-                                value={cat.targetPointsCap ?? 100}
-                                onChange={(e) =>
-                                  setCategories((prev) =>
-                                    prev.map((c, i) =>
-                                      i === idx
-                                        ? {
-                                            ...c,
-                                            targetPointsCap:
-                                              Number.parseInt(
-                                                e.target.value,
-                                                10
-                                              ) || 1,
-                                          }
-                                        : c
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  placeholder="Cap"
+                                  aria-label="Target points cap"
+                                  value={cat.targetPointsCap ?? 100}
+                                  onChange={(e) =>
+                                    setCategories((prev) =>
+                                      prev.map((c, i) =>
+                                        i === idx
+                                          ? {
+                                              ...c,
+                                              targetPointsCap:
+                                                Number.parseInt(
+                                                  e.target.value,
+                                                  10
+                                                ) || 1,
+                                            }
+                                          : c
+                                      )
                                     )
-                                  )
-                                }
-                                className="w-full rounded-lg border border-slate-300 px-2 py-1 text-[11px] text-slate-900"
-                              />
-                              <span className="text-[10px] text-slate-500 shrink-0">
-                                pts cap
-                              </span>
+                                  }
+                                  className="w-full rounded-lg border border-slate-300 px-2 py-1 text-[11px] text-slate-900"
+                                />
+                                <span className="text-[10px] text-slate-500 shrink-0">
+                                  pts cap
+                                </span>
+                              </div>
+                              {!pointsEnabled && (
+                                <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                                  Inactive (Points disabled)
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <span className="text-[11px] text-slate-500 self-center">

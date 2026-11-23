@@ -36,6 +36,7 @@ interface LiveSessionResponse {
     code: string;
     title: string;
     section: string;
+    pointsEnabled?: boolean;
   };
   session: {
     id: string;
@@ -416,12 +417,20 @@ export default function TeacherLiveAttendancePage() {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}{" "}
-                  • Present (+{data.session.presentPoints} pts) until{" "}
+                  • Present
+                  {data.subject.pointsEnabled !== false
+                    ? ` (+${data.session.presentPoints} pts)`
+                    : ""}{" "}
+                  until{" "}
                   {new Date(data.session.presentCutoffAt).toLocaleTimeString(
                     [],
                     { hour: "2-digit", minute: "2-digit" }
                   )}{" "}
-                  • Late (+{data.session.latePoints} pts) until{" "}
+                  • Late
+                  {data.subject.pointsEnabled !== false
+                    ? ` (+${data.session.latePoints} pts)`
+                    : ""}{" "}
+                  until{" "}
                   {new Date(data.session.lateCutoffAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -692,13 +701,29 @@ export default function TeacherLiveAttendancePage() {
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none"
                         >
                           <option value="PRESENT">
-                            PRESENT (+{data.session.presentPoints} pts)
+                            PRESENT
+                            {data.subject.pointsEnabled !== false
+                              ? ` (+${data.session.presentPoints} pts)`
+                              : ""}
                           </option>
                           <option value="LATE">
-                            LATE (+{data.session.latePoints} pts)
+                            LATE
+                            {data.subject.pointsEnabled !== false
+                              ? ` (+${data.session.latePoints} pts)`
+                              : ""}
                           </option>
-                          <option value="EXCUSED">EXCUSED (0 pts)</option>
-                          <option value="ABSENT">ABSENT (0 pts)</option>
+                          <option value="EXCUSED">
+                            EXCUSED
+                            {data.subject.pointsEnabled !== false
+                              ? " (0 pts)"
+                              : ""}
+                          </option>
+                          <option value="ABSENT">
+                            ABSENT
+                            {data.subject.pointsEnabled !== false
+                              ? " (0 pts)"
+                              : ""}
+                          </option>
                         </select>
                       </div>
                       <div className="sm:col-span-2 space-y-1">
@@ -777,9 +802,15 @@ export default function TeacherLiveAttendancePage() {
                                     rec.distanceMeters != null
                                       ? ` • ${Math.round(rec.distanceMeters)}m`
                                       : ""
-                                  } • +${rec.pointsAwarded} pts`
-                                : "Awaiting check-in"}{" "}
-                              • Wallet: {item.availableBalance} pts
+                                  }${
+                                    data.subject.pointsEnabled !== false
+                                      ? ` • +${rec.pointsAwarded} pts`
+                                      : ""
+                                  }`
+                                : "Awaiting check-in"}
+                              {data.subject.pointsEnabled !== false
+                                ? ` • Wallet: ${item.availableBalance} pts`
+                                : ""}
                             </p>
                             {rec?.overrideReason && (
                               <p className="text-[11px] text-indigo-700">
@@ -817,6 +848,7 @@ export default function TeacherLiveAttendancePage() {
               lateCount={counts.LATE}
               presentPoints={data.session.presentPoints}
               latePoints={data.session.latePoints}
+              pointsEnabled={data.subject.pointsEnabled !== false}
               isOnline={isOnline}
               isBrowserFullscreen={isBrowserFullscreen}
               canToggleBrowserFullscreen={canToggleBrowserFullscreen}

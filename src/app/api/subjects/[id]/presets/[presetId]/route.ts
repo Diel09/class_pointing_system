@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
-import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
+import {
+  jsonError,
+  pointsDisabledError,
+  requireTeacherSubjectOwner,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { resolveSignedPointsDelta } from "@/lib/points/merit-math";
 import { updateMeritPresetSchema } from "@/lib/validations/points";
@@ -16,6 +20,9 @@ export async function PATCH(
   const owner = await requireTeacherSubjectOwner(id);
   if (!owner.ok) {
     return owner.response;
+  }
+  if (owner.data.subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   if (!uuidSchema.safeParse(presetId).success) {

@@ -26,6 +26,13 @@ export function jsonError(
   );
 }
 
+export const POINTS_DISABLED_MESSAGE =
+  "Points & Economy is currently disabled for this subject.";
+
+export function pointsDisabledError(): NextResponse {
+  return jsonError(POINTS_DISABLED_MESSAGE, 400, "ERR_POINTS_DISABLED");
+}
+
 /**
  * Ensures the request has a valid, active authenticated user session.
  */

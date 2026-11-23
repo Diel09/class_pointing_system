@@ -156,4 +156,25 @@ describe("subject validation helpers", () => {
       }).success
     ).toBe(true);
   });
+
+  it("accepts optional pointsEnabled boolean on createSubjectSchema and updateSubjectSchema", () => {
+    const createDisabled = createSubjectSchema.safeParse({
+      code: "CS 102",
+      title: "Discrete Math",
+      section: "BSCS-1B",
+      pointsEnabled: false,
+    });
+    expect(createDisabled.success).toBe(true);
+    if (createDisabled.success) {
+      expect(createDisabled.data.pointsEnabled).toBe(false);
+    }
+
+    const updateToggle = updateSubjectSchema.safeParse({
+      pointsEnabled: false,
+    });
+    expect(updateToggle.success).toBe(true);
+    if (updateToggle.success) {
+      expect(updateToggle.data.pointsEnabled).toBe(false);
+    }
+  });
 });

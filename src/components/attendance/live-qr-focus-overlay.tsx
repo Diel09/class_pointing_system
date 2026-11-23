@@ -33,6 +33,7 @@ interface LiveQrFocusOverlayProps {
   lateCount: number;
   presentPoints: number;
   latePoints: number;
+  pointsEnabled?: boolean;
   isOnline: boolean;
   isBrowserFullscreen: boolean;
   canToggleBrowserFullscreen: boolean;
@@ -55,6 +56,7 @@ export function LiveQrFocusOverlay({
   lateCount,
   presentPoints,
   latePoints,
+  pointsEnabled = true,
   isOnline,
   isBrowserFullscreen,
   canToggleBrowserFullscreen,
@@ -217,9 +219,11 @@ export function LiveQrFocusOverlay({
                   Puento → Scan Attendance QR
                 </span>
               </p>
-              <p className="text-xs text-slate-400">
-                Present: +{presentPoints} pts • Late: +{latePoints} pts
-              </p>
+              {pointsEnabled && (
+                <p className="text-xs text-slate-400">
+                  Present: +{presentPoints} pts • Late: +{latePoints} pts
+                </p>
+              )}
             </div>
           </>
         ) : (

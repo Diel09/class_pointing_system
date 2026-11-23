@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Camera,
@@ -60,6 +60,32 @@ export default function StudentP2pSendPage() {
   const params = useParams<{ id: string }>();
   const subjectId = params.id;
   const queryClient = useQueryClient();
+
+  const { data: subjectData } = useQuery<{
+    subject: {
+      pointsEnabled?: boolean;
+      allowP2pTransfers?: boolean;
+    };
+  }>({
+    queryKey: ["subject", subjectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/subjects/${subjectId}`, {
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("Unable to load subject.");
+      return (await res.json()) as {
+        subject: {
+          pointsEnabled?: boolean;
+          allowP2pTransfers?: boolean;
+        };
+      };
+    },
+    enabled: Boolean(subjectId),
+  });
+
+  const pointsDisabled = subjectData?.subject.pointsEnabled === false;
+  const p2pDisabled =
+    pointsDisabled || subjectData?.subject.allowP2pTransfers === false;
 
   const [isOnline, setIsOnline] = useState(
     typeof navigator === "undefined" ? true : navigator.onLine
@@ -279,7 +305,26 @@ export default function StudentP2pSendPage() {
         )}
 
         <div className="rounded-2xl bg-white border border-slate-200 p-6 shadow-sm space-y-5">
-          {receipt ? (
+          {p2pDisabled ? (
+            <div className="space-y-3 text-center py-4">
+              <h2 className="text-lg font-bold text-slate-900">
+                {pointsDisabled
+                  ? "Points & Economy Disabled"
+                  : "Peer-to-Peer Transfers Disabled"}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {pointsDisabled
+                  ? "Your teacher has disabled the Points & Economy system for this section."
+                  : "Peer-to-peer point transfers are currently disabled for this section."}
+              </p>
+              <Link
+                href={`/subjects/${subjectId}`}
+                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+              >
+                Return to Class Workspace
+              </Link>
+            </div>
+          ) : receipt ? (
             /* Step 3: Digital Receipt */
             <div className="space-y-5 text-center">
               <CheckCircle2 className="h-12 w-12 text-emerald-600 mx-auto" />

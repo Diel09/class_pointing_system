@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
 import {
   jsonError,
+  pointsDisabledError,
   requireSubjectInstructor,
   requireTeacherSubjectOwner,
 } from "@/lib/auth/guards";
@@ -41,6 +42,9 @@ export async function POST(
   const owner = await requireTeacherSubjectOwner(id);
   if (!owner.ok) {
     return owner.response;
+  }
+  if (owner.data.subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   let body: unknown;

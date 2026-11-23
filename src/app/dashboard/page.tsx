@@ -44,6 +44,7 @@ interface SubjectDto {
   endDate?: string | null;
   inviteCode?: string;
   isArchived: boolean;
+  pointsEnabled?: boolean;
   term: TermDto;
   teacher?: { id: string; fullName: string; email: string };
   coTeachers?: {
@@ -71,6 +72,7 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [termId, setTermId] = useState("");
+  const [pointsEnabled, setPointsEnabled] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
@@ -140,6 +142,7 @@ export default function DashboardPage() {
           ...(startDate ? { startDate } : {}),
           ...(endDate ? { endDate } : {}),
           ...(termId ? { termId } : {}),
+          pointsEnabled,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -153,6 +156,7 @@ export default function DashboardPage() {
       setSection("");
       setStartDate("");
       setEndDate("");
+      setPointsEnabled(true);
       setShowCreateForm(false);
       await queryClient.invalidateQueries({ queryKey: ["subjects"] });
     } catch {
@@ -420,6 +424,27 @@ export default function DashboardPage() {
                 </div>
               )}
 
+              <div className="sm:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                <div>
+                  <label
+                    htmlFor="sub-points-enabled"
+                    className="block text-xs font-semibold text-slate-800"
+                  >
+                    Enable Points &amp; Economy
+                  </label>
+                  <p className="text-[11px] text-slate-500">
+                    Students can earn attendance/merit points, transfer via QR, and redeem rewards.
+                  </p>
+                </div>
+                <input
+                  id="sub-points-enabled"
+                  type="checkbox"
+                  checked={pointsEnabled}
+                  onChange={(e) => setPointsEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                />
+              </div>
+
               <div className="sm:col-span-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -585,17 +610,23 @@ export default function DashboardPage() {
 
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                       {subject.enrollment ? (
-                        <div className="flex items-center gap-3">
-                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                            <Coins className="h-3.5 w-3.5" />
-                            <span>
-                              {subject.enrollment.availableBalance} pts
+                        subject.pointsEnabled !== false ? (
+                          <div className="flex items-center gap-3">
+                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                              <Coins className="h-3.5 w-3.5" />
+                              <span>
+                                {subject.enrollment.availableBalance} pts
+                              </span>
                             </span>
-                          </span>
+                            <span className="text-slate-500">
+                              {subject.enrollment.escrowedBalance} pending
+                            </span>
+                          </div>
+                        ) : (
                           <span className="text-slate-500">
-                            {subject.enrollment.escrowedBalance} pending
+                            Attendance &amp; Grades
                           </span>
-                        </div>
+                        )
                       ) : (
                         <div className="flex items-center gap-3 text-slate-600">
                           <span className="inline-flex items-center gap-1 font-medium">

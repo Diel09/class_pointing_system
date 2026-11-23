@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_SUBJECT_TAB_KEYS,
   CO_TEACHER_SUBJECT_TABS,
+  getStudentSubjectTabs,
   getSubjectTabHref,
   resolveSubjectTab,
   STUDENT_SUBJECT_TABS,
@@ -65,6 +66,20 @@ describe("subject workspace tabs", () => {
       "Learning Materials",
       "Points & Rewards",
       "Attendance",
+    ]);
+  });
+
+  it("hides the Points & Rewards tab for students when points are disabled", () => {
+    expect(getStudentSubjectTabs(true).map((tab) => tab.key)).toEqual([
+      "grades",
+      "materials",
+      "points",
+      "attendance",
+    ]);
+    expect(getStudentSubjectTabs(false).map((tab) => tab.key)).toEqual([
+      "grades",
+      "materials",
+      "attendance",
     ]);
   });
 });

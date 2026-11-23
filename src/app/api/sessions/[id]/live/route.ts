@@ -99,6 +99,7 @@ export async function GET(
       code: subject.code,
       title: subject.title,
       section: subject.section,
+      pointsEnabled: subject.pointsEnabled,
     },
     session: toPublicSessionDto(session, true),
     qr,

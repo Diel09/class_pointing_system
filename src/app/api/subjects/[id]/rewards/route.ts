@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
 import {
   jsonError,
+  pointsDisabledError,
   requireSubjectMember,
   requireTeacherSubjectOwner,
 } from "@/lib/auth/guards";
@@ -67,6 +68,7 @@ export async function GET(
   });
 
   return NextResponse.json({
+    pointsEnabled: subject.pointsEnabled,
     allowOpenRedemptions: subject.allowOpenRedemptions,
     rewards: rewards.map(serializeRewardItem),
   });
@@ -88,6 +90,9 @@ export async function POST(
       400,
       "ERR_SUBJECT_ARCHIVED"
     );
+  }
+  if (owner.data.subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   let body: unknown;

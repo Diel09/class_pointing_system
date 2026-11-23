@@ -2,7 +2,11 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit";
-import { jsonError, requireSubjectInstructor } from "@/lib/auth/guards";
+import {
+  jsonError,
+  pointsDisabledError,
+  requireSubjectInstructor,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { dispatchNotifications } from "@/lib/notifications/dispatch";
 import {
@@ -41,6 +45,9 @@ export async function POST(
       400,
       "ERR_SUBJECT_ARCHIVED"
     );
+  }
+  if (subject.pointsEnabled === false) {
+    return pointsDisabledError();
   }
 
   let body: unknown;

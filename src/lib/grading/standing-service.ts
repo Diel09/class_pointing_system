@@ -62,6 +62,7 @@ export async function computeSubjectStandings(options: {
         where: { id: subjectId },
         select: {
           id: true,
+          pointsEnabled: true,
           lateAttendanceCreditPct: true,
           termSplitConfig: true,
         },
@@ -235,7 +236,8 @@ export async function computeSubjectStandings(options: {
       })),
       lateAttendanceCreditPct,
       earnedMeritAndAttendancePts: earnedPts,
-      hasSubjectPointActivity: activityCount > 0,
+      hasSubjectPointActivity:
+        subject.pointsEnabled !== false && activityCount > 0,
       termSplitConfig,
       gradeScaleRules: effectiveScale,
       manualStandingOverride: enrollment.manualStandingOverride,

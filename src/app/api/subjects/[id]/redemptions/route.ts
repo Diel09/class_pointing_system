@@ -2,7 +2,12 @@ import { randomUUID } from "crypto";
 import type { Prisma, RedemptionStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit";
-import { jsonError, requireSubjectMember } from "@/lib/auth/guards";
+import {
+  jsonError,
+  POINTS_DISABLED_MESSAGE,
+  pointsDisabledError,
+  requireSubjectMember,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { dispatchNotifications } from "@/lib/notifications/dispatch";
 import {
@@ -279,6 +284,9 @@ export async function POST(
       "ERR_SUBJECT_ARCHIVED"
     );
   }
+  if (subject.pointsEnabled === false) {
+    return pointsDisabledError();
+  }
 
   let body: unknown;
   try {
@@ -302,7 +310,12 @@ export async function POST(
     const result = await db.$transaction(async (tx) => {
       const liveSubject = await tx.subject.findUnique({
         where: { id },
-        select: { id: true, isArchived: true, allowOpenRedemptions: true },
+        select: {
+          id: true,
+          isArchived: true,
+          pointsEnabled: true,
+          allowOpenRedemptions: true,
+        },
       });
       if (!liveSubject) {
         throw new RedemptionRejectedError("Subject not found.", "ERR_NOT_FOUND", 404);
@@ -311,6 +324,13 @@ export async function POST(
         throw new RedemptionRejectedError(
           "Cannot submit redemptions on an archived subject.",
           "ERR_SUBJECT_ARCHIVED",
+          400
+        );
+      }
+      if (liveSubject.pointsEnabled === false) {
+        throw new RedemptionRejectedError(
+          POINTS_DISABLED_MESSAGE,
+          "ERR_POINTS_DISABLED",
           400
         );
       }

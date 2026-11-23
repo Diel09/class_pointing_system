@@ -97,6 +97,7 @@ export const createSubjectSchema = z
     termId: z.string().uuid("Invalid academic term.").optional(),
     startDate: optionalNullableDateSchema,
     endDate: optionalNullableDateSchema,
+    pointsEnabled: z.boolean().optional(),
   })
   .refine((data) => hasValidSubjectDateRange(data.startDate, data.endDate), {
     message: "End date must be on or after start date.",
@@ -111,6 +112,7 @@ export const updateSubjectSchema = z.object({
   startDate: optionalNullableDateSchema,
   endDate: optionalNullableDateSchema,
   isArchived: z.boolean().optional(),
+  pointsEnabled: z.boolean().optional(),
   allowNegativeBalance: z.boolean().optional(),
   allowP2pTransfers: z.boolean().optional(),
   p2pMaxPerTransfer: z.number().int().min(1).max(100_000).nullable().optional(),

@@ -62,6 +62,7 @@ interface TeacherRedemptionItem {
 interface TeacherEconomyPanelProps {
   subjectId: string;
   isArchived: boolean;
+  pointsEnabled?: boolean;
   allowP2pTransfers: boolean;
   p2pMaxPerTransfer: number | null;
   p2pMaxPerDay: number | null;
@@ -80,6 +81,7 @@ function parseOptionalCap(raw: string): number | null {
 export function TeacherEconomyPanel({
   subjectId,
   isArchived,
+  pointsEnabled = true,
   allowP2pTransfers,
   p2pMaxPerTransfer,
   p2pMaxPerDay,
@@ -328,7 +330,7 @@ export function TeacherEconomyPanel({
   return (
     <section className="space-y-6">
       {/* 1. P2P & Redemption Guardrails (Owner only) */}
-      {isOwner && (
+      {isOwner && pointsEnabled && (
       <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
         <div className="flex items-center gap-2">
           <Settings2 className="h-4 w-4 text-indigo-600" />
@@ -502,7 +504,7 @@ export function TeacherEconomyPanel({
             </div>
             <button
               type="button"
-              disabled={isArchived}
+              disabled={isArchived || !pointsEnabled}
               onClick={() => setShowRewardForm((prev) => !prev)}
               className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
             >
@@ -738,9 +740,10 @@ export function TeacherEconomyPanel({
                   </div>
                   <button
                     type="button"
+                    disabled={!pointsEnabled || isArchived}
                     onClick={() => void handleToggleRewardActive(reward)}
                     title={reward.isActive ? "Archive reward" : "Reactivate reward"}
-                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
                   >
                     {reward.isActive ? (
                       <Archive className="h-3.5 w-3.5" />

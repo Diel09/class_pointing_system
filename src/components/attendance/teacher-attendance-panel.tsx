@@ -42,11 +42,13 @@ interface SessionSummary {
 interface TeacherAttendancePanelProps {
   subjectId: string;
   isArchived: boolean;
+  pointsEnabled?: boolean;
 }
 
 export function TeacherAttendancePanel({
   subjectId,
   isArchived,
+  pointsEnabled = true,
 }: TeacherAttendancePanelProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -137,8 +139,8 @@ export function TeacherAttendancePanel({
           radiusMeters,
           presentWindowMinutes,
           lateWindowMinutes,
-          presentPoints,
-          latePoints,
+          presentPoints: pointsEnabled ? presentPoints : 0,
+          latePoints: pointsEnabled ? latePoints : 0,
           qrRotationSeconds,
         }),
       });
@@ -196,9 +198,11 @@ export function TeacherAttendancePanel({
               </span>
             </div>
             <p className="text-xs text-emerald-800">
-              Radius: {openSession.radiusMeters}m • Present:{" "}
-              {openSession.presentPoints} pts • Late: {openSession.latePoints}{" "}
-              pts • Present cutoff:{" "}
+              Radius: {openSession.radiusMeters}m{" "}
+              {pointsEnabled
+                ? `• Present: ${openSession.presentPoints} pts • Late: ${openSession.latePoints} pts `
+                : ""}
+              • Present cutoff:{" "}
               {new Date(openSession.presentCutoffAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -343,41 +347,49 @@ export function TeacherAttendancePanel({
               />
             </div>
 
-            <div className="space-y-1">
-              <label
-                htmlFor="att-present-pts"
-                className="block text-[11px] font-semibold text-slate-700"
-              >
-                Present Points
-              </label>
-              <input
-                id="att-present-pts"
-                type="number"
-                min={0}
-                max={1000}
-                value={presentPoints}
-                onChange={(e) => setPresentPoints(Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
+            {pointsEnabled ? (
+              <>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="att-present-pts"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    Present Points
+                  </label>
+                  <input
+                    id="att-present-pts"
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={presentPoints}
+                    onChange={(e) => setPresentPoints(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <label
-                htmlFor="att-late-pts"
-                className="block text-[11px] font-semibold text-slate-700"
-              >
-                Late Points
-              </label>
-              <input
-                id="att-late-pts"
-                type="number"
-                min={0}
-                max={1000}
-                value={latePoints}
-                onChange={(e) => setLatePoints(Number(e.target.value))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
-              />
-            </div>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="att-late-pts"
+                    className="block text-[11px] font-semibold text-slate-700"
+                  >
+                    Late Points
+                  </label>
+                  <input
+                    id="att-late-pts"
+                    type="number"
+                    min={0}
+                    max={1000}
+                    value={latePoints}
+                    onChange={(e) => setLatePoints(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="sm:col-span-2 flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                Attendance points are disabled for this section (0 pts).
+              </div>
+            )}
 
             <div className="space-y-1">
               <label
