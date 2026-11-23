@@ -3,6 +3,7 @@
 import {
   CalendarCheck2,
   Coins,
+  FolderOpen,
   GraduationCap,
   Users,
   type LucideIcon,
@@ -10,7 +11,12 @@ import {
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export type SubjectTabKey = "grades" | "attendance" | "points" | "roster";
+export type SubjectTabKey =
+  | "grades"
+  | "materials"
+  | "attendance"
+  | "points"
+  | "roster";
 
 export interface SubjectTabItem {
   key: SubjectTabKey;
@@ -27,6 +33,12 @@ export const STUDENT_SUBJECT_TABS: readonly SubjectTabItem[] = [
     icon: GraduationCap,
   },
   {
+    key: "materials",
+    label: "Learning Materials",
+    mobileLabel: "Materials",
+    icon: FolderOpen,
+  },
+  {
     key: "points",
     label: "Points & Rewards",
     mobileLabel: "Points",
@@ -40,12 +52,18 @@ export const STUDENT_SUBJECT_TABS: readonly SubjectTabItem[] = [
   },
 ];
 
-export const TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
+export const CO_TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
   {
     key: "grades",
     label: "Standing & Gradebook",
     mobileLabel: "Gradebook",
     icon: GraduationCap,
+  },
+  {
+    key: "materials",
+    label: "Learning Materials",
+    mobileLabel: "Materials",
+    icon: FolderOpen,
   },
   {
     key: "attendance",
@@ -59,6 +77,10 @@ export const TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
     mobileLabel: "Points",
     icon: Coins,
   },
+];
+
+export const TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
+  ...CO_TEACHER_SUBJECT_TABS,
   {
     key: "roster",
     label: "Student Roster",
@@ -69,6 +91,7 @@ export const TEACHER_SUBJECT_TABS: readonly SubjectTabItem[] = [
 
 export const ALL_SUBJECT_TAB_KEYS: readonly SubjectTabKey[] = [
   "grades",
+  "materials",
   "attendance",
   "points",
   "roster",
@@ -95,6 +118,8 @@ export function getSubjectTabHref(
   tab: SubjectTabKey
 ): string {
   switch (tab) {
+    case "materials":
+      return `/subjects/${subjectId}/materials`;
     case "attendance":
       return `/subjects/${subjectId}/attendance`;
     case "points":
@@ -125,6 +150,7 @@ export function SubjectWorkspaceTabs({
   activeTab,
 }: SubjectWorkspaceTabsProps) {
   const isThreeTabLayout = tabs.length === 3;
+  const isFiveTabLayout = tabs.length >= 5;
 
   return (
     <nav
@@ -132,7 +158,11 @@ export function SubjectWorkspaceTabs({
       aria-label={ariaLabel}
       className={cn(
         "grid gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm lg:flex lg:items-center",
-        isThreeTabLayout ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-4"
+        isThreeTabLayout
+          ? "grid-cols-3"
+          : isFiveTabLayout
+          ? "grid-cols-2 sm:grid-cols-5"
+          : "grid-cols-2 sm:grid-cols-4"
       )}
     >
       {tabs.map((tab) => {

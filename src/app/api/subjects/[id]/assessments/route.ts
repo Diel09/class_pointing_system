@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
 import {
   jsonError,
+  requireSubjectInstructor,
   requireSubjectMember,
-  requireTeacherSubjectOwner,
 } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { round2 } from "@/lib/grading/computeStanding";
@@ -292,7 +292,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
+  const owner = await requireSubjectInstructor(id);
   if (!owner.ok) {
     return owner.response;
   }

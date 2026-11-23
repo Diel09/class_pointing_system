@@ -111,11 +111,26 @@ export async function POST(
         );
       }
       if (subject.teacherId !== user.id) {
-        throw new ReviewRedemptionError(
-          "You do not own the subject for this redemption request.",
-          "ERR_SUBJECT_FORBIDDEN",
-          403
-        );
+        const isCoTeacher =
+          typeof tx.subjectCoTeacher?.findUnique === "function" &&
+          Boolean(
+            await tx.subjectCoTeacher.findUnique({
+              where: {
+                subjectId_teacherId: {
+                  subjectId: redemption.subjectId,
+                  teacherId: user.id,
+                },
+              },
+              select: { id: true },
+            })
+          );
+        if (!isCoTeacher) {
+          throw new ReviewRedemptionError(
+            "You do not own the subject for this redemption request.",
+            "ERR_SUBJECT_FORBIDDEN",
+            403
+          );
+        }
       }
       if (subject.isArchived) {
         throw new ReviewRedemptionError(

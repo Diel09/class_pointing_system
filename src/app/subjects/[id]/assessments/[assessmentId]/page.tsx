@@ -16,6 +16,11 @@ interface SubjectSummaryResponse {
     section: string;
     isArchived: boolean;
     teacher: { id: string; fullName: string; email: string };
+    coTeachers?: {
+      id: string;
+      teacherId: string;
+      teacher: { id: string; fullName: string; email: string };
+    }[];
     term: { id: string; name: string; isActive: boolean };
   };
 }
@@ -70,7 +75,12 @@ export default function AssessmentGradingPage() {
 
   const isTeacherOwner =
     user?.role === "TEACHER" &&
-    subjectData?.subject.teacher.id === user.id;
+    (subjectData?.subject.teacher.id === user.id ||
+      Boolean(
+        subjectData?.subject.coTeachers?.some(
+          (ct) => ct.teacherId === user.id || ct.teacher.id === user.id
+        )
+      ));
 
   const { data: assessmentsData } = useQuery<{
     assessments: SubjectAssessmentOption[];

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
-import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
+import {
+  jsonError,
+  requireSubjectInstructor,
+  requireTeacherSubjectOwner,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { unenrollStudentsInTransaction } from "@/lib/subjects/unenroll-students";
 import { updateStandingOverrideSchema } from "@/lib/validations/grading";
@@ -13,7 +17,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string; enrollmentId: string }> }
 ) {
   const { id, enrollmentId } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
+  const owner = await requireSubjectInstructor(id);
   if (!owner.ok) {
     return owner.response;
   }

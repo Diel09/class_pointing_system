@@ -23,11 +23,28 @@ export async function GET(request: Request) {
   if (user.role === "TEACHER") {
     const subjects = await db.subject.findMany({
       where: {
-        teacherId: user.id,
+        OR: [
+          { teacherId: user.id },
+          { coTeachers: { some: { teacherId: user.id } } },
+        ],
         ...(archivedFilter !== undefined ? { isArchived: archivedFilter } : {}),
       },
       orderBy: [{ isArchived: "asc" }, { createdAt: "desc" }],
       include: {
+        teacher: { select: { id: true, fullName: true, email: true } },
+        coTeachers: {
+          orderBy: { addedAt: "asc" },
+          include: {
+            teacher: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                institutionalId: true,
+              },
+            },
+          },
+        },
         term: { select: { id: true, name: true, isActive: true } },
         _count: { select: { enrollments: true } },
       },
@@ -49,6 +66,19 @@ export async function GET(request: Request) {
         subject: {
           include: {
             teacher: { select: { id: true, fullName: true, email: true } },
+            coTeachers: {
+              orderBy: { addedAt: "asc" },
+              include: {
+                teacher: {
+                  select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    institutionalId: true,
+                  },
+                },
+              },
+            },
             term: { select: { id: true, name: true, isActive: true } },
           },
         },
@@ -75,6 +105,19 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
     include: {
       teacher: { select: { id: true, fullName: true, email: true } },
+      coTeachers: {
+        orderBy: { addedAt: "asc" },
+        include: {
+          teacher: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+              institutionalId: true,
+            },
+          },
+        },
+      },
       term: { select: { id: true, name: true, isActive: true } },
       _count: { select: { enrollments: true } },
     },

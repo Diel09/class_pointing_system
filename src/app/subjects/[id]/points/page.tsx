@@ -15,9 +15,11 @@ import type { RosterItem } from "@/components/subjects/teacher-roster-panel";
 function TeacherPointsSection({
   subjectId,
   subject,
+  isOwner,
 }: {
   subjectId: string;
   subject: SubjectDetailDto;
+  isOwner: boolean;
 }) {
   const { data: rosterData } = useQuery<{ roster: RosterItem[] }>({
     queryKey: ["subject-roster", subjectId],
@@ -38,6 +40,7 @@ function TeacherPointsSection({
         isArchived={subject.isArchived}
         allowNegativeBalance={subject.allowNegativeBalance}
         roster={rosterData?.roster ?? []}
+        isOwner={isOwner}
       />
 
       <TeacherEconomyPanel
@@ -48,6 +51,7 @@ function TeacherPointsSection({
         p2pMaxPerDay={subject.p2pMaxPerDay}
         p2pMaxPerTerm={subject.p2pMaxPerTerm}
         allowOpenRedemptions={subject.allowOpenRedemptions}
+        isOwner={isOwner}
       />
     </div>
   );
@@ -59,7 +63,7 @@ export default function SubjectPointsPage() {
 
   return (
     <SubjectWorkspaceShell subjectId={subjectId} activeTab="points">
-      {({ subject, enrollment, isTeacherOwner }) => (
+      {({ subject, enrollment, isTeacherOwner, isInstructor }) => (
         <>
           {enrollment && (
             <div className="space-y-6">
@@ -86,8 +90,12 @@ export default function SubjectPointsPage() {
             </div>
           )}
 
-          {isTeacherOwner && (
-            <TeacherPointsSection subjectId={subjectId} subject={subject} />
+          {isInstructor && (
+            <TeacherPointsSection
+              subjectId={subjectId}
+              subject={subject}
+              isOwner={isTeacherOwner}
+            />
           )}
         </>
       )}

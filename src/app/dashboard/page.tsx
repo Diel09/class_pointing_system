@@ -36,6 +36,7 @@ interface TermDto {
 
 interface SubjectDto {
   id: string;
+  teacherId?: string;
   code: string;
   title: string;
   section: string;
@@ -45,6 +46,11 @@ interface SubjectDto {
   isArchived: boolean;
   term: TermDto;
   teacher?: { id: string; fullName: string; email: string };
+  coTeachers?: {
+    id: string;
+    teacherId: string;
+    teacher: { id: string; fullName: string; email: string };
+  }[];
   _count?: { enrollments: number };
   enrollment?: {
     id: string;
@@ -158,9 +164,19 @@ export default function DashboardPage() {
 
   const subjects = subjectsData?.subjects ?? [];
   const terms = termsData?.terms ?? [];
+  const selectableSubjects = subjects.filter(
+    (s) =>
+      user?.role === "ADMIN" ||
+      (user?.role === "TEACHER" &&
+        (!s.teacher || s.teacher.id === user.id) &&
+        (!s.teacherId || s.teacherId === user.id))
+  );
   const canManageSubjects =
-    user?.role === "TEACHER" || user?.role === "ADMIN";
-  const selectedSubjects = subjects.filter((s) => selectedIds.has(s.id));
+    (user?.role === "TEACHER" || user?.role === "ADMIN") &&
+    selectableSubjects.length > 0;
+  const selectedSubjects = selectableSubjects.filter((s) =>
+    selectedIds.has(s.id)
+  );
 
   function toggleSubjectSelection(id: string) {
     setSelectedIds((prev) => {
@@ -462,12 +478,14 @@ export default function DashboardPage() {
               <div className="rounded-2xl bg-indigo-50/70 border border-indigo-200 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3 text-xs">
                   <span className="font-semibold text-indigo-950">
-                    {selectedIds.size} of {subjects.length} selected
+                    {selectedIds.size} of {selectableSubjects.length} selected
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedIds(new Set(subjects.map((s) => s.id)))
+                      setSelectedIds(
+                        new Set(selectableSubjects.map((s) => s.id))
+                      )
                     }
                     className="font-semibold text-indigo-700 hover:underline"
                   >
@@ -503,9 +521,18 @@ export default function DashboardPage() {
                   subject.startDate,
                   subject.endDate
                 );
-                const canDelete = canManageSubjects;
-                const canDuplicate = user?.role === "TEACHER";
+                const isSubjectOwner =
+                  user?.role === "TEACHER" &&
+                  (!subject.teacher || subject.teacher.id === user.id) &&
+                  (!subject.teacherId || subject.teacherId === user.id);
+                const isCoTeacher =
+                  user?.role === "TEACHER" && !isSubjectOwner;
+                const canDelete =
+                  user?.role === "ADMIN" || isSubjectOwner;
+                const canDuplicate = isSubjectOwner;
                 const isSelected = selectedIds.has(subject.id);
+                const coTeacherNames =
+                  subject.coTeachers?.map((ct) => ct.teacher.fullName) ?? [];
 
                 const cardBody = (
                   <>
@@ -519,9 +546,16 @@ export default function DashboardPage() {
                             : ""
                         }`}
                       >
-                        <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
-                          {subject.code} • {subject.section}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center rounded-lg bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+                            {subject.code} • {subject.section}
+                          </span>
+                          {isCoTeacher && (
+                            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                              Co-Teacher
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[11px] text-slate-500">
                           {subject.term.name}
                         </span>
@@ -529,9 +563,16 @@ export default function DashboardPage() {
                       <h3 className="text-base font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">
                         {subject.title}
                       </h3>
-                      {subject.teacher && (
+                      {(subject.teacher || coTeacherNames.length > 0) && (
                         <p className="text-xs text-slate-500">
-                          Instructor: {subject.teacher.fullName}
+                          {subject.teacher
+                            ? `Instructor: ${subject.teacher.fullName}`
+                            : ""}
+                          {coTeacherNames.length > 0
+                            ? `${subject.teacher ? " • " : ""}Co-Teacher${
+                                coTeacherNames.length > 1 ? "s" : ""
+                              }: ${coTeacherNames.join(", ")}`
+                            : ""}
                         </p>
                       )}
                       {dateRange && (

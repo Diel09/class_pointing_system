@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { bulkDeleteStudentsSchema } from "../auth";
 import {
+  addCoTeachersSchema,
   bulkUnenrollRosterSchema,
+  createSubjectMaterialSchema,
   createSubjectSchema,
   duplicateSubjectSchema,
   generateInviteCode,
@@ -9,6 +11,7 @@ import {
   isSameSectionName,
   normalizeInviteCodeInput,
   parseRosterEntries,
+  updateSubjectMaterialSchema,
   updateSubjectSchema,
 } from "../subject";
 
@@ -116,5 +119,41 @@ describe("subject validation helpers", () => {
     expect(
       bulkDeleteStudentsSchema.safeParse({ studentIds: ["bad"] }).success
     ).toBe(false);
+  });
+
+  it("validates addCoTeachersSchema and subject material schemas", () => {
+    expect(
+      addCoTeachersSchema.safeParse({ rawText: "teacher2@classpulse.local" })
+        .success
+    ).toBe(true);
+    expect(addCoTeachersSchema.safeParse({ rawText: "   " }).success).toBe(
+      false
+    );
+
+    const validMaterial = createSubjectMaterialSchema.safeParse({
+      title: "Week 1 Lecture Slides",
+      topic: "Week 1",
+      description: "Introductory slides",
+      driveUrl:
+        "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+    });
+    expect(validMaterial.success).toBe(true);
+    if (validMaterial.success) {
+      expect(validMaterial.data.requirePublicLink).toBe(true);
+    }
+
+    expect(
+      createSubjectMaterialSchema.safeParse({
+        title: "A",
+        driveUrl: "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/view",
+      }).success
+    ).toBe(false);
+
+    expect(
+      updateSubjectMaterialSchema.safeParse({
+        title: "Updated Lecture Slides",
+        requirePublicLink: false,
+      }).success
+    ).toBe(true);
   });
 });

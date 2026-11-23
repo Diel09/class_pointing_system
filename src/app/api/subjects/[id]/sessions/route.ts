@@ -4,8 +4,8 @@ import { generateSessionQrSecret } from "@/lib/attendance/qr-token";
 import { toPublicSessionDto } from "@/lib/attendance/session-dto";
 import {
   jsonError,
+  requireSubjectInstructor,
   requireSubjectMember,
-  requireTeacherSubjectOwner,
 } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { createSessionSchema } from "@/lib/validations/attendance";
@@ -94,7 +94,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
+  const owner = await requireSubjectInstructor(id);
   if (!owner.ok) {
     return owner.response;
   }

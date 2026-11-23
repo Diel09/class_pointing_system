@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
-import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
+import {
+  jsonError,
+  requireSubjectInstructor,
+  requireTeacherSubjectOwner,
+} from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import {
   addRosterSchema,
@@ -12,9 +16,9 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
-  if (!owner.ok) {
-    return owner.response;
+  const instructor = await requireSubjectInstructor(id);
+  if (!instructor.ok) {
+    return instructor.response;
   }
 
   const roster = await db.subjectEnrollment.findMany({

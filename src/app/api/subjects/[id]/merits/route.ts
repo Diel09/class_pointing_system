@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getClientIp } from "@/lib/audit";
-import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
+import { jsonError, requireSubjectInstructor } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { dispatchNotifications } from "@/lib/notifications/dispatch";
 import {
@@ -29,7 +29,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
+  const owner = await requireSubjectInstructor(id);
   if (!owner.ok) {
     return owner.response;
   }

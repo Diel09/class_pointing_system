@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { jsonError, requireTeacherSubjectOwner } from "@/lib/auth/guards";
+import { jsonError, requireSubjectInstructor } from "@/lib/auth/guards";
 import {
   buildClassGradeSheetWorkbook,
   buildGradeSheetFilename,
@@ -15,7 +15,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  const owner = await requireTeacherSubjectOwner(id);
+  const owner = await requireSubjectInstructor(id);
   if (!owner.ok) {
     return owner.response;
   }

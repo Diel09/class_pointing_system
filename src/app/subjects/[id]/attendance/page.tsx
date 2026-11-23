@@ -11,11 +11,11 @@ export default function SubjectAttendancePage() {
 
   return (
     <SubjectWorkspaceShell subjectId={subjectId} activeTab="attendance">
-      {({ subject, enrollment, isTeacherOwner }) => (
+      {({ subject, enrollment, isInstructor }) => (
         <>
           {enrollment && <StudentAttendancePanel subjectId={subjectId} />}
 
-          {isTeacherOwner && (
+          {isInstructor && (
             <TeacherAttendancePanel
               subjectId={subjectId}
               isArchived={subject.isArchived}

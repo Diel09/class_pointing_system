@@ -102,6 +102,15 @@ enum LinkAccessStatus {
   PRIVATE_OR_RESTRICTED
 }
 
+enum GoogleDriveResourceType {
+  FILE
+  FOLDER
+  DOCUMENT
+  SPREADSHEET
+  PRESENTATION
+  FORM
+}
+
 model User {
   id              String     @id @default(uuid()) @db.Uuid
   email           String     @unique
@@ -117,6 +126,9 @@ model User {
   passwordResetTokens PasswordResetToken[]
   createdInviteCodes  TeacherInviteCode[]  @relation("AdminCreatedInvites")
   taughtSubjects      Subject[]            @relation("TeacherSubjects")
+  coTaughtSubjects    SubjectCoTeacher[]   @relation("SubjectCoTeachers")
+  addedCoTeachers     SubjectCoTeacher[]   @relation("SubjectCoTeacherAdder")
+  uploadedMaterials   SubjectMaterial[]    @relation("SubjectMaterialUploader")
   enrollments         SubjectEnrollment[]  @relation("StudentEnrollments")
   auditLogs           AuditLog[]           @relation("AuditActor")
   attendanceSessions  AttendanceSession[]  @relation("TeacherSessions")
@@ -196,6 +208,8 @@ model Subject {
 
   teacher            User                @relation("TeacherSubjects", fields: [teacherId], references: [id], onDelete: Restrict)
   term               AcademicTerm        @relation(fields: [termId], references: [id], onDelete: Restrict)
+  coTeachers         SubjectCoTeacher[]
+  materials          SubjectMaterial[]
   enrollments        SubjectEnrollment[]
   auditLogs          AuditLog[]
   attendanceSessions AttendanceSession[]
@@ -210,6 +224,44 @@ model Subject {
 
   @@index([teacherId, isArchived])
   @@index([termId])
+}
+
+model SubjectCoTeacher {
+  id            String   @id @default(uuid()) @db.Uuid
+  subjectId     String   @db.Uuid
+  teacherId     String   @db.Uuid
+  addedByUserId String?  @db.Uuid
+  addedAt       DateTime @default(now())
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher User    @relation("SubjectCoTeachers", fields: [teacherId], references: [id], onDelete: Cascade)
+  addedBy User?   @relation("SubjectCoTeacherAdder", fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([subjectId, teacherId])
+  @@index([teacherId])
+}
+
+model SubjectMaterial {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  subjectId           String                  @db.Uuid
+  uploadedByTeacherId String?                 @db.Uuid
+  title               String
+  topic               String?
+  description         String?
+  driveUrl            String
+  normalizedUrl       String
+  driveResourceId     String?
+  resourceType        GoogleDriveResourceType @default(FILE)
+  accessStatus        LinkAccessStatus        @default(PUBLIC_VERIFIED)
+  accessCheckedAt     DateTime?
+  requirePublicLink   Boolean                 @default(true)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  subject           Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  uploadedByTeacher User?   @relation("SubjectMaterialUploader", fields: [uploadedByTeacherId], references: [id], onDelete: SetNull)
+
+  @@index([subjectId, createdAt])
 }
 
 model SubjectEnrollment {
@@ -508,6 +560,8 @@ enum NotificationType {
   SCORE_UPDATED
   SUBMISSION_RECEIVED
   STUDENT_JOINED
+  CO_TEACHER_ADDED
+  MATERIAL_POSTED
 }
 
 model PushSubscription {

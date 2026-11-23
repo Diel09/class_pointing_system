@@ -108,6 +108,25 @@ async function requireSubjectForRoles(
   return { ok: true, data: { user: roleResult.data, subject } };
 }
 
+async function isUserSubjectCoTeacher(
+  subjectId: string,
+  userId: string
+): Promise<boolean> {
+  if (typeof db.subjectCoTeacher?.findUnique !== "function") {
+    return false;
+  }
+  const coTeacher = await db.subjectCoTeacher.findUnique({
+    where: {
+      subjectId_teacherId: {
+        subjectId,
+        teacherId: userId,
+      },
+    },
+    select: { id: true },
+  });
+  return Boolean(coTeacher);
+}
+
 /**
  * Ensures the caller is a TEACHER who owns the specified subject.
  */
@@ -115,6 +134,68 @@ export async function requireTeacherSubjectOwner(
   subjectId: string
 ): Promise<GuardResult<{ user: AuthenticatedUser; subject: Subject }>> {
   return requireSubjectForRoles(subjectId, ["TEACHER"]);
+}
+
+/**
+ * Ensures the caller is a TEACHER who is either the primary owner or an assigned co-teacher of the subject.
+ */
+export async function requireSubjectInstructor(
+  subjectId: string
+): Promise<
+  GuardResult<{
+    user: AuthenticatedUser;
+    subject: Subject;
+    isOwner: boolean;
+    isCoTeacher: boolean;
+  }>
+> {
+  const roleResult = await requireRole(["TEACHER"]);
+  if (!roleResult.ok) {
+    return roleResult;
+  }
+
+  if (!UUID_REGEX.test(subjectId)) {
+    return {
+      ok: false,
+      response: jsonError("Subject not found.", 404, "ERR_NOT_FOUND"),
+    };
+  }
+
+  const subject = await db.subject.findUnique({
+    where: { id: subjectId },
+  });
+  if (!subject) {
+    return {
+      ok: false,
+      response: jsonError("Subject not found.", 404, "ERR_NOT_FOUND"),
+    };
+  }
+
+  const isOwner = subject.teacherId === roleResult.data.id;
+  const isCoTeacher = isOwner
+    ? false
+    : await isUserSubjectCoTeacher(subject.id, roleResult.data.id);
+
+  if (!isOwner && !isCoTeacher) {
+    return {
+      ok: false,
+      response: jsonError(
+        "You do not have instructor access to this subject.",
+        403,
+        "ERR_SUBJECT_FORBIDDEN"
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      user: roleResult.data,
+      subject,
+      isOwner,
+      isCoTeacher,
+    },
+  };
 }
 
 /**
@@ -127,13 +208,15 @@ export async function requireSubjectOwnerOrAdmin(
 }
 
 /**
- * Ensures the caller is the owning teacher, an enrolled student, or an admin.
+ * Ensures the caller is the owning teacher, a co-teacher, an enrolled student, or an admin.
  */
 export async function requireSubjectMember(subjectId: string): Promise<
   GuardResult<{
     user: AuthenticatedUser;
     subject: Subject;
     enrollment: SubjectEnrollment | null;
+    isOwner?: boolean;
+    isCoTeacher?: boolean;
   }>
 > {
   const authResult = await requireAuth();
@@ -160,11 +243,25 @@ export async function requireSubjectMember(subjectId: string): Promise<
   }
 
   if (user.role === "ADMIN") {
-    return { ok: true, data: { user, subject, enrollment: null } };
+    return {
+      ok: true,
+      data: {
+        user,
+        subject,
+        enrollment: null,
+        isOwner: false,
+        isCoTeacher: false,
+      },
+    };
   }
 
   if (user.role === "TEACHER") {
-    if (subject.teacherId !== user.id) {
+    const isOwner = subject.teacherId === user.id;
+    const isCoTeacher = isOwner
+      ? false
+      : await isUserSubjectCoTeacher(subject.id, user.id);
+
+    if (!isOwner && !isCoTeacher) {
       return {
         ok: false,
         response: jsonError(
@@ -174,7 +271,16 @@ export async function requireSubjectMember(subjectId: string): Promise<
         ),
       };
     }
-    return { ok: true, data: { user, subject, enrollment: null } };
+    return {
+      ok: true,
+      data: {
+        user,
+        subject,
+        enrollment: null,
+        isOwner,
+        isCoTeacher,
+      },
+    };
   }
 
   const enrollment = await db.subjectEnrollment.findUnique({
@@ -196,11 +302,20 @@ export async function requireSubjectMember(subjectId: string): Promise<
     };
   }
 
-  return { ok: true, data: { user, subject, enrollment } };
+  return {
+    ok: true,
+    data: {
+      user,
+      subject,
+      enrollment,
+      isOwner: false,
+      isCoTeacher: false,
+    },
+  };
 }
 
 /**
- * Ensures the caller is the TEACHER who owns the subject associated with an attendance session.
+ * Ensures the caller is a TEACHER (owner or co-teacher) of the subject associated with an attendance session.
  */
 export async function requireTeacherSessionOwner(sessionId: string): Promise<
   GuardResult<{
@@ -233,7 +348,12 @@ export async function requireTeacherSessionOwner(sessionId: string): Promise<
   }
 
   const { subject, ...session } = sessionWithSubject;
-  if (subject.teacherId !== roleResult.data.id) {
+  const isOwner = subject.teacherId === roleResult.data.id;
+  const isCoTeacher = isOwner
+    ? false
+    : await isUserSubjectCoTeacher(subject.id, roleResult.data.id);
+
+  if (!isOwner && !isCoTeacher) {
     return {
       ok: false,
       response: jsonError(

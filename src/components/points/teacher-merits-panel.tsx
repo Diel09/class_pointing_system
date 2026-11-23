@@ -46,6 +46,7 @@ interface TeacherMeritsPanelProps {
   isArchived: boolean;
   allowNegativeBalance: boolean;
   roster: MeritRosterStudent[];
+  isOwner?: boolean;
 }
 
 export function TeacherMeritsPanel({
@@ -53,6 +54,7 @@ export function TeacherMeritsPanel({
   isArchived,
   allowNegativeBalance,
   roster,
+  isOwner = true,
 }: TeacherMeritsPanelProps) {
   const queryClient = useQueryClient();
 
@@ -337,38 +339,40 @@ export function TeacherMeritsPanel({
           </p>
         </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2">
-          <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-              <Settings2 className="h-3.5 w-3.5 text-slate-500" />
-              <span>Allow Negative Point Balance</span>
-            </span>
-            <p className="text-[11px] text-slate-500">
-              {allowNegativeBalance
-                ? "Debt enabled: demerits can push balances below 0."
-                : "Floored at 0: demerits stop at 0 pts while logging full infraction."}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-label="Allow Negative Point Balance"
-            aria-checked={allowNegativeBalance}
-            disabled={policySaving}
-            onClick={handleToggleNegativeBalance}
-            className={cn(
-              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
-              allowNegativeBalance ? "bg-indigo-600" : "bg-slate-300"
-            )}
-          >
-            <span
+        {isOwner && (
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2">
+            <div className="space-y-0.5">
+              <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                <Settings2 className="h-3.5 w-3.5 text-slate-500" />
+                <span>Allow Negative Point Balance</span>
+              </span>
+              <p className="text-[11px] text-slate-500">
+                {allowNegativeBalance
+                  ? "Debt enabled: demerits can push balances below 0."
+                  : "Floored at 0: demerits stop at 0 pts while logging full infraction."}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label="Allow Negative Point Balance"
+              aria-checked={allowNegativeBalance}
+              disabled={policySaving}
+              onClick={handleToggleNegativeBalance}
               className={cn(
-                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition",
-                allowNegativeBalance ? "translate-x-5" : "translate-x-0"
+                "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                allowNegativeBalance ? "bg-indigo-600" : "bg-slate-300"
               )}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition",
+                  allowNegativeBalance ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+        )}
       </div>
 
       {isArchived && (
@@ -385,34 +389,36 @@ export function TeacherMeritsPanel({
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                 Merit &amp; Demerit Presets
               </h4>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowArchivedPresets((v) => !v)}
-                  className="text-[11px] font-medium text-slate-500 hover:text-slate-800"
-                >
-                  {showArchivedPresets ? "Hide archived" : "Show archived"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (showPresetForm && !editingPresetId) {
-                      resetPresetForm();
-                    } else {
-                      setEditingPresetId(null);
-                      setPresetName("");
-                      setPresetDescription("");
-                      setPresetPoints(5);
-                      setPresetType("MERIT");
-                      setShowPresetForm(true);
-                    }
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
-                >
-                  <Plus className="h-3 w-3" />
-                  <span>New Preset</span>
-                </button>
-              </div>
+              {isOwner && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowArchivedPresets((v) => !v)}
+                    className="text-[11px] font-medium text-slate-500 hover:text-slate-800"
+                  >
+                    {showArchivedPresets ? "Hide archived" : "Show archived"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showPresetForm && !editingPresetId) {
+                        resetPresetForm();
+                      } else {
+                        setEditingPresetId(null);
+                        setPresetName("");
+                        setPresetDescription("");
+                        setPresetPoints(5);
+                        setPresetType("MERIT");
+                        setShowPresetForm(true);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>New Preset</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {showPresetForm && (
@@ -579,32 +585,34 @@ export function TeacherMeritsPanel({
                         )}
                       </button>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => startEditPreset(preset)}
-                          aria-label={`Edit ${preset.name}`}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleArchivePreset(preset)}
-                          aria-label={
-                            preset.isArchived
-                              ? `Restore ${preset.name}`
-                              : `Archive ${preset.name}`
-                          }
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                        >
-                          {preset.isArchived ? (
-                            <RotateCcw className="h-3.5 w-3.5" />
-                          ) : (
-                            <Archive className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </div>
+                      {isOwner && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => startEditPreset(preset)}
+                            aria-label={`Edit ${preset.name}`}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleArchivePreset(preset)}
+                            aria-label={
+                              preset.isArchived
+                                ? `Restore ${preset.name}`
+                                : `Archive ${preset.name}`
+                            }
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                          >
+                            {preset.isArchived ? (
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            ) : (
+                              <Archive className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

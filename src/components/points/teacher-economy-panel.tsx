@@ -67,6 +67,7 @@ interface TeacherEconomyPanelProps {
   p2pMaxPerDay: number | null;
   p2pMaxPerTerm: number | null;
   allowOpenRedemptions: boolean;
+  isOwner?: boolean;
 }
 
 function parseOptionalCap(raw: string): number | null {
@@ -84,6 +85,7 @@ export function TeacherEconomyPanel({
   p2pMaxPerDay,
   p2pMaxPerTerm,
   allowOpenRedemptions,
+  isOwner = true,
 }: TeacherEconomyPanelProps) {
   const queryClient = useQueryClient();
 
@@ -325,7 +327,8 @@ export function TeacherEconomyPanel({
 
   return (
     <section className="space-y-6">
-      {/* 1. P2P & Redemption Guardrails */}
+      {/* 1. P2P & Redemption Guardrails (Owner only) */}
+      {isOwner && (
       <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
         <div className="flex items-center gap-2">
           <Settings2 className="h-4 w-4 text-indigo-600" />
@@ -483,10 +486,12 @@ export function TeacherEconomyPanel({
           </div>
         </form>
       </div>
+      )}
 
       {/* 2. Reward Catalog Management & Pending Redemptions Queue */}
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Reward Catalog CRUD */}
+      <div className={cn("grid gap-6", isOwner ? "lg:grid-cols-5" : "grid-cols-1")}>
+        {/* Reward Catalog CRUD (Owner only) */}
+        {isOwner && (
         <div className="lg:col-span-2 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -748,9 +753,10 @@ export function TeacherEconomyPanel({
             </div>
           )}
         </div>
+        )}
 
         {/* Pending Redemptions Queue */}
-        <div className="lg:col-span-3 rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
+        <div className={cn("rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4", isOwner ? "lg:col-span-3" : "")}>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />

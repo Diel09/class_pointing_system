@@ -21,12 +21,25 @@ import {
 import { DuplicateSubjectModal } from "@/components/subjects/duplicate-subject-modal";
 import { EditSubjectModal } from "@/components/subjects/edit-subject-modal";
 import {
+  CO_TEACHER_SUBJECT_TABS,
   STUDENT_SUBJECT_TABS,
   SubjectWorkspaceTabs,
   TEACHER_SUBJECT_TABS,
   type SubjectTabKey,
 } from "@/components/subjects/subject-workspace-tabs";
 import { formatSubjectDateRange } from "@/lib/utils";
+
+export interface SubjectCoTeacherDto {
+  id: string;
+  teacherId: string;
+  addedAt: string;
+  teacher: {
+    id: string;
+    fullName: string;
+    email: string;
+    institutionalId: string | null;
+  };
+}
 
 export interface SubjectDetailDto {
   id: string;
@@ -46,6 +59,7 @@ export interface SubjectDetailDto {
   inviteCode?: string;
   enrollmentCount: number;
   teacher: { id: string; fullName: string; email: string };
+  coTeachers?: SubjectCoTeacherDto[];
   term: { id: string; name: string; isActive: boolean };
 }
 
@@ -68,6 +82,8 @@ export interface SubjectWorkspaceContext {
   subject: SubjectDetailDto;
   enrollment: SubjectEnrollmentDto | null;
   isTeacherOwner: boolean;
+  isCoTeacher: boolean;
+  isInstructor: boolean;
 }
 
 interface SubjectWorkspaceShellProps {
@@ -126,11 +142,22 @@ export function SubjectWorkspaceShell({
   const isTeacherOwner =
     user?.role === "TEACHER" &&
     subjectData?.subject.teacher.id === user.id;
+  const isCoTeacher =
+    user?.role === "TEACHER" &&
+    !isTeacherOwner &&
+    Boolean(
+      subjectData?.subject.coTeachers?.some(
+        (ct) => ct.teacherId === user.id || ct.teacher.id === user.id
+      )
+    );
+  const isInstructor = isTeacherOwner || isCoTeacher;
   const canDeleteSection = isTeacherOwner || user?.role === "ADMIN";
   const subjectDateRange = formatSubjectDateRange(
     subjectData?.subject.startDate,
     subjectData?.subject.endDate
   );
+  const coTeacherNames =
+    subjectData?.subject.coTeachers?.map((ct) => ct.teacher.fullName) ?? [];
 
   async function handleToggleArchive() {
     if (!subjectData) return;
@@ -181,13 +208,21 @@ export function SubjectWorkspaceShell({
                       Archived
                     </span>
                   )}
+                  {isCoTeacher && (
+                    <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800">
+                      Co-Teacher
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900">
                   {subjectData.subject.title}
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Instructor: {subjectData.subject.teacher.fullName} •{" "}
-                  {subjectData.subject.enrollmentCount} enrolled students
+                  Instructor: {subjectData.subject.teacher.fullName}
+                  {coTeacherNames.length > 0
+                    ? ` • Co-Teacher${coTeacherNames.length > 1 ? "s" : ""}: ${coTeacherNames.join(", ")}`
+                    : ""}{" "}
+                  • {subjectData.subject.enrollmentCount} enrolled students
                 </p>
                 {subjectDateRange && (
                   <p className="inline-flex items-center gap-1.5 text-xs text-slate-500">
@@ -266,13 +301,21 @@ export function SubjectWorkspaceShell({
               </>
             )}
 
-            {/* Teacher Navigation */}
-            {isTeacherOwner && (
+            {/* Teacher & Co-Teacher Navigation */}
+            {isInstructor && (
               <SubjectWorkspaceTabs
                 subjectId={subjectId}
                 ariaLabel="Teacher subject sections"
-                tabs={TEACHER_SUBJECT_TABS}
-                activeTab={activeTab}
+                tabs={
+                  isTeacherOwner
+                    ? TEACHER_SUBJECT_TABS
+                    : CO_TEACHER_SUBJECT_TABS
+                }
+                activeTab={
+                  !isTeacherOwner && activeTab === "roster"
+                    ? "grades"
+                    : activeTab
+                }
               />
             )}
 
@@ -282,6 +325,8 @@ export function SubjectWorkspaceShell({
               subject: subjectData.subject,
               enrollment: subjectData.enrollment,
               isTeacherOwner,
+              isCoTeacher,
+              isInstructor,
             })}
           </>
         )}

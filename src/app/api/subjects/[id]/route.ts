@@ -37,8 +37,32 @@ export async function GET(
     return jsonError("Subject not found.", 404, "ERR_NOT_FOUND");
   }
 
-  // Only expose teacher-only inviteCode management details to teacher owner / admin.
-  const isStudent = member.data.user.role === "STUDENT";
+  const coTeachers =
+    typeof db.subjectCoTeacher?.findMany === "function"
+      ? await db.subjectCoTeacher.findMany({
+          where: { subjectId: id },
+          orderBy: { addedAt: "asc" },
+          select: {
+            id: true,
+            teacherId: true,
+            addedAt: true,
+            teacher: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                institutionalId: true,
+              },
+            },
+          },
+        })
+      : [];
+
+  // Only expose teacher-only inviteCode management details to primary teacher owner / admin.
+  const canViewInviteCode =
+    member.data.user.role === "ADMIN" ||
+    (member.data.user.role === "TEACHER" &&
+      subject.teacherId === member.data.user.id);
   return NextResponse.json({
     subject: {
       id: subject.id,
@@ -56,9 +80,10 @@ export async function GET(
       p2pMaxPerTerm: subject.p2pMaxPerTerm,
       allowOpenRedemptions: subject.allowOpenRedemptions,
       teacher: subject.teacher,
+      coTeachers,
       term: subject.term,
       enrollmentCount: subject._count.enrollments,
-      ...(isStudent ? {} : { inviteCode: subject.inviteCode }),
+      ...(canViewInviteCode ? { inviteCode: subject.inviteCode } : {}),
     },
     enrollment: member.data.enrollment
       ? {

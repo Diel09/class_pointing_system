@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_SUBJECT_TAB_KEYS,
+  CO_TEACHER_SUBJECT_TABS,
   getSubjectTabHref,
   resolveSubjectTab,
   STUDENT_SUBJECT_TABS,
@@ -9,10 +10,13 @@ import {
 
 describe("subject workspace tabs", () => {
   const studentKeys = STUDENT_SUBJECT_TABS.map((tab) => tab.key);
+  const coTeacherKeys = CO_TEACHER_SUBJECT_TABS.map((tab) => tab.key);
   const teacherKeys = TEACHER_SUBJECT_TABS.map((tab) => tab.key);
 
-  it("resolves valid tab query params for teacher and student workspaces", () => {
+  it("resolves valid tab query params for teacher, co-teacher, and student workspaces", () => {
     expect(resolveSubjectTab("points", studentKeys)).toBe("points");
+    expect(resolveSubjectTab("materials", studentKeys)).toBe("materials");
+    expect(resolveSubjectTab("materials", coTeacherKeys)).toBe("materials");
     expect(resolveSubjectTab("attendance", studentKeys)).toBe("attendance");
     expect(resolveSubjectTab("roster", teacherKeys)).toBe("roster");
     expect(resolveSubjectTab("roster", ALL_SUBJECT_TAB_KEYS)).toBe("roster");
@@ -23,10 +27,14 @@ describe("subject workspace tabs", () => {
     expect(resolveSubjectTab(undefined, teacherKeys)).toBe("grades");
     expect(resolveSubjectTab("unknown", teacherKeys)).toBe("grades");
     expect(resolveSubjectTab("roster", studentKeys)).toBe("grades");
+    expect(resolveSubjectTab("roster", coTeacherKeys)).toBe("grades");
   });
 
   it("builds canonical dedicated routes for each subject workspace section", () => {
     expect(getSubjectTabHref("sub_123", "grades")).toBe("/subjects/sub_123");
+    expect(getSubjectTabHref("sub_123", "materials")).toBe(
+      "/subjects/sub_123/materials"
+    );
     expect(getSubjectTabHref("sub_123", "attendance")).toBe(
       "/subjects/sub_123/attendance"
     );
@@ -41,12 +49,20 @@ describe("subject workspace tabs", () => {
   it("preserves full accessible labels alongside concise mobile labels", () => {
     expect(TEACHER_SUBJECT_TABS.map((tab) => tab.label)).toEqual([
       "Standing & Gradebook",
+      "Learning Materials",
       "Attendance",
       "Points & Economy",
       "Student Roster",
     ]);
+    expect(CO_TEACHER_SUBJECT_TABS.map((tab) => tab.label)).toEqual([
+      "Standing & Gradebook",
+      "Learning Materials",
+      "Attendance",
+      "Points & Economy",
+    ]);
     expect(STUDENT_SUBJECT_TABS.map((tab) => tab.label)).toEqual([
       "Assessments & Standing",
+      "Learning Materials",
       "Points & Rewards",
       "Attendance",
     ]);

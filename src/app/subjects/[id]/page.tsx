@@ -38,6 +38,7 @@ function SubjectGradebookContent() {
   // Preserve backward compatibility for old ?tab= links
   useEffect(() => {
     if (
+      tabQueryValue === "materials" ||
       tabQueryValue === "attendance" ||
       tabQueryValue === "points" ||
       tabQueryValue === "roster"
@@ -67,7 +68,7 @@ function SubjectGradebookContent() {
 
   return (
     <SubjectWorkspaceShell subjectId={subjectId} activeTab="grades">
-      {({ subject, enrollment, isTeacherOwner }) => (
+      {({ subject, enrollment, isTeacherOwner, isInstructor }) => (
         <>
           {enrollment && (
             <StudentAssessmentsPanel
@@ -76,46 +77,51 @@ function SubjectGradebookContent() {
             />
           )}
 
-          {isTeacherOwner && (
+          {isInstructor && (
             <div className="space-y-4">
-              <div
-                role="tablist"
-                aria-label="Gradebook workspace views"
-                className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={gradebookView === "assessments"}
-                  onClick={() => handleViewChange("assessments")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                    gradebookView === "assessments"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  )}
+              {isTeacherOwner && (
+                <div
+                  role="tablist"
+                  aria-label="Gradebook workspace views"
+                  className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
                 >
-                  <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Gradebook &amp; Standing</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={gradebookView === "computation"}
-                  onClick={() => handleViewChange("computation")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                    gradebookView === "computation"
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  )}
-                >
-                  <Calculator className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>Computation &amp; Scale</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={gradebookView === "assessments"}
+                    onClick={() => handleViewChange("assessments")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                      gradebookView === "assessments"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    <ClipboardList
+                      className="h-3.5 w-3.5"
+                      aria-hidden="true"
+                    />
+                    <span>Gradebook &amp; Standing</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={gradebookView === "computation"}
+                    onClick={() => handleViewChange("computation")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                      gradebookView === "computation"
+                        ? "bg-slate-900 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    <Calculator className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span>Computation &amp; Scale</span>
+                  </button>
+                </div>
+              )}
 
-              {gradebookView === "assessments" ? (
+              {!isTeacherOwner || gradebookView === "assessments" ? (
                 <TeacherAssessmentsPanel
                   subjectId={subjectId}
                   isArchived={subject.isArchived}

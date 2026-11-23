@@ -38,14 +38,29 @@ async function requireTeacherAssessmentOwner(assessmentId: string) {
     };
   }
   if (assessment.subject.teacherId !== roleResult.data.id) {
-    return {
-      ok: false as const,
-      response: jsonError(
-        "You do not own this assessment.",
-        403,
-        "ERR_SUBJECT_FORBIDDEN"
-      ),
-    };
+    const isCoTeacher =
+      typeof db.subjectCoTeacher?.findUnique === "function" &&
+      Boolean(
+        await db.subjectCoTeacher.findUnique({
+          where: {
+            subjectId_teacherId: {
+              subjectId: assessment.subjectId,
+              teacherId: roleResult.data.id,
+            },
+          },
+          select: { id: true },
+        })
+      );
+    if (!isCoTeacher) {
+      return {
+        ok: false as const,
+        response: jsonError(
+          "You do not own this assessment.",
+          403,
+          "ERR_SUBJECT_FORBIDDEN"
+        ),
+      };
+    }
   }
 
   return {

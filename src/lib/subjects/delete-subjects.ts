@@ -60,6 +60,16 @@ export async function deleteSubjectsInTransaction(
 
   // Delete assessments before GradeCategory/Subject cascade so Assessment.category (onDelete: Restrict) cannot block deletion.
   await tx.assessment.deleteMany({ where: { subjectId: { in: subjectIds } } });
+  if (typeof tx.subjectMaterial?.deleteMany === "function") {
+    await tx.subjectMaterial.deleteMany({
+      where: { subjectId: { in: subjectIds } },
+    });
+  }
+  if (typeof tx.subjectCoTeacher?.deleteMany === "function") {
+    await tx.subjectCoTeacher.deleteMany({
+      where: { subjectId: { in: subjectIds } },
+    });
+  }
   // Explicitly clear redemptions, point ledger entries, enrollments, and subject-linked notifications.
   await tx.redemptionRequest.deleteMany({
     where: { subjectId: { in: subjectIds } },

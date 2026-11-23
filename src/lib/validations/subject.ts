@@ -158,3 +158,64 @@ export const bulkUnenrollRosterSchema = z.object({
     .min(1, "Select at least one student to unenroll.")
     .max(200, "You can unenroll at most 200 students at once."),
 });
+
+export const addCoTeachersSchema = z.object({
+  rawText: z
+    .string()
+    .trim()
+    .min(1, "Enter at least one teacher email or institutional ID."),
+});
+
+export const createSubjectMaterialSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(2, "Material title is required.")
+    .max(160, "Material title must be at most 160 characters."),
+  topic: z
+    .string()
+    .trim()
+    .max(80, "Topic must be at most 80 characters.")
+    .nullable()
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .max(1000, "Description must be at most 1000 characters.")
+    .nullable()
+    .optional(),
+  driveUrl: z
+    .string()
+    .trim()
+    .min(1, "Please enter a Google Drive link.")
+    .max(2048, "Google Drive link is too long."),
+  requirePublicLink: z.boolean().optional().default(true),
+});
+
+export const updateSubjectMaterialSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(2, "Material title is required.")
+    .max(160, "Material title must be at most 160 characters.")
+    .optional(),
+  topic: z
+    .string()
+    .trim()
+    .max(80, "Topic must be at most 80 characters.")
+    .nullable()
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .max(1000, "Description must be at most 1000 characters.")
+    .nullable()
+    .optional(),
+  driveUrl: z
+    .string()
+    .trim()
+    .min(1, "Please enter a Google Drive link.")
+    .max(2048, "Google Drive link is too long.")
+    .optional(),
+  requirePublicLink: z.boolean().optional(),
+});
