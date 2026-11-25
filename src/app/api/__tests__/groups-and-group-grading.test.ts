@@ -394,4 +394,90 @@ describe("Group Mode APIs (Group Sets, Group Submissions, Group Grading)", () =>
     );
     expect(dispatchNotificationsMock).toHaveBeenCalledTimes(1);
   });
+
+  it("uses single-statement bulk $executeRaw upserts in group mode when supported by the Prisma client", async () => {
+    getCurrentUserMock.mockResolvedValue({
+      id: TEACHER_ID,
+      role: "TEACHER",
+      status: "ACTIVE",
+      fullName: "Prof. Cruz",
+      email: "prof@classpulse.local",
+    });
+    assessmentFindUniqueMock.mockResolvedValue({
+      id: ASSESSMENT_ID,
+      subjectId: SUBJECT_ID,
+      categoryId: "cat-1",
+      title: "Group Lab 1",
+      description: null,
+      maxScore: 50,
+      assessmentDate: null,
+      submissionEnabled: true,
+      dueAt: null,
+      allowLateSubmissions: true,
+      requirePublicLink: true,
+      isGroupMode: true,
+      groupSetId: GROUP_SET_ID,
+      groupSet: { id: GROUP_SET_ID, name: "Lab Groups" },
+      category: { id: "cat-1", name: "Labs", termKey: "DEFAULT" },
+      subject: {
+        id: SUBJECT_ID,
+        code: "CS 101",
+        teacherId: TEACHER_ID,
+        isArchived: false,
+      },
+    });
+    studentGroupFindManyMock.mockResolvedValue([
+      {
+        id: GROUP_ID,
+        groupSetId: GROUP_SET_ID,
+        name: "Group 1",
+        sortOrder: 0,
+        memberships: [
+          { enrollmentId: ENROLL_1_ID },
+          { enrollmentId: ENROLL_2_ID },
+        ],
+      },
+    ]);
+    subjectEnrollmentFindManyMock.mockResolvedValue([
+      { id: ENROLL_1_ID, studentId: STUDENT_ID },
+      { id: ENROLL_2_ID, studentId: STUDENT_2_ID },
+    ]);
+
+    const executeRawMock = vi.fn().mockResolvedValue(2);
+    const prevExecuteRaw = (txClient as { $executeRaw?: unknown }).$executeRaw;
+    (txClient as { $executeRaw?: unknown }).$executeRaw = executeRawMock;
+
+    try {
+      const { PUT } = await import("@/app/api/assessments/[id]/scores/route");
+      const res = await PUT(
+        new Request("http://localhost/api/assessments/x/scores", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groupScores: [
+              {
+                groupId: GROUP_ID,
+                status: "GRADED",
+                rawScore: 44,
+                remarks: "Good work",
+              },
+            ],
+            memberScores: [],
+          }),
+        }),
+        { params: Promise.resolve({ id: ASSESSMENT_ID }) }
+      );
+
+      expect(res.status).toBe(200);
+      expect(executeRawMock).toHaveBeenCalledTimes(2);
+      expect(groupAssessmentScoreUpsertMock).not.toHaveBeenCalled();
+      expect(assessmentScoreUpsertMock).not.toHaveBeenCalled();
+    } finally {
+      if (prevExecuteRaw === undefined) {
+        delete (txClient as { $executeRaw?: unknown }).$executeRaw;
+      } else {
+        (txClient as { $executeRaw?: unknown }).$executeRaw = prevExecuteRaw;
+      }
+    }
+  });
 });

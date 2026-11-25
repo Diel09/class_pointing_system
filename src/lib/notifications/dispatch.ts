@@ -1,4 +1,5 @@
 import type { NotificationType } from "@prisma/client";
+import { after } from "next/server";
 import { sendNotification, setVapidDetails } from "web-push";
 import { db } from "@/lib/db";
 import { getVapidConfig } from "@/lib/env";
@@ -50,59 +51,12 @@ function getPushStatusCode(err: unknown): number | null {
   return null;
 }
 
-/**
- * Persists in-app notifications and delivers best-effort Web Push alerts via VAPID.
- * Designed to run after database transactions commit so external push latency or
- * unmocked unit-test DB stubs never disrupt core transactional operations.
- */
-export async function dispatchNotifications(
+async function deliverWebPushNotifications(
   items: NotificationDispatchItem[]
-): Promise<{ createdCount: number; pushAttempted: number; prunedCount: number }> {
-  if (items.length === 0) {
-    return { createdCount: 0, pushAttempted: 0, prunedCount: 0 };
-  }
-
-  let createdCount = 0;
-  const notificationRepo = (
-    db as unknown as {
-      notification?: {
-        createMany?: (args: {
-          data: {
-            userId: string;
-            subjectId: string | null;
-            type: NotificationType;
-            title: string;
-            body: string;
-            linkUrl: string | null;
-          }[];
-        }) => Promise<{ count?: number }>;
-      };
-    }
-  ).notification;
-
-  if (typeof notificationRepo?.createMany === "function") {
-    try {
-      const res = await notificationRepo.createMany({
-        data: items.map((item) => ({
-          userId: item.userId,
-          subjectId: item.subjectId ?? null,
-          type: item.type,
-          title: item.title,
-          body: item.body,
-          linkUrl: item.linkUrl ?? null,
-        })),
-      });
-      createdCount = res?.count ?? items.length;
-    } catch (err) {
-      if (process.env.NODE_ENV !== "test") {
-        console.warn("Failed to persist notifications:", err);
-      }
-    }
-  }
-
+): Promise<{ pushAttempted: number; prunedCount: number }> {
   try {
     if (!ensureVapidConfigured() || typeof sendNotification !== "function") {
-      return { createdCount, pushAttempted: 0, prunedCount: 0 };
+      return { pushAttempted: 0, prunedCount: 0 };
     }
 
     const pushRepo = (
@@ -126,7 +80,7 @@ export async function dispatchNotifications(
     ).pushSubscription;
 
     if (typeof pushRepo?.findMany !== "function") {
-      return { createdCount, pushAttempted: 0, prunedCount: 0 };
+      return { pushAttempted: 0, prunedCount: 0 };
     }
 
     const uniqueUserIds = Array.from(new Set(items.map((item) => item.userId)));
@@ -142,7 +96,7 @@ export async function dispatchNotifications(
     });
 
     if (subscriptions.length === 0) {
-      return { createdCount, pushAttempted: 0, prunedCount: 0 };
+      return { pushAttempted: 0, prunedCount: 0 };
     }
 
     const subsByUser = new Map<string, StoredSubscription[]>();
@@ -202,7 +156,6 @@ export async function dispatchNotifications(
     }
 
     return {
-      createdCount,
       pushAttempted: deliveries.length,
       prunedCount: staleSubscriptionIds.size,
     };
@@ -210,6 +163,75 @@ export async function dispatchNotifications(
     if (process.env.NODE_ENV !== "test") {
       console.warn("Web Push dispatch error:", err);
     }
+    return { pushAttempted: 0, prunedCount: 0 };
+  }
+}
+
+/**
+ * Persists in-app notifications immediately and delivers best-effort Web Push
+ * alerts via VAPID after the HTTP response when running in a Next.js request scope.
+ */
+export async function dispatchNotifications(
+  items: NotificationDispatchItem[]
+): Promise<{ createdCount: number; pushAttempted: number; prunedCount: number }> {
+  if (items.length === 0) {
+    return { createdCount: 0, pushAttempted: 0, prunedCount: 0 };
+  }
+
+  let createdCount = 0;
+  const notificationRepo = (
+    db as unknown as {
+      notification?: {
+        createMany?: (args: {
+          data: {
+            userId: string;
+            subjectId: string | null;
+            type: NotificationType;
+            title: string;
+            body: string;
+            linkUrl: string | null;
+          }[];
+        }) => Promise<{ count?: number }>;
+      };
+    }
+  ).notification;
+
+  if (typeof notificationRepo?.createMany === "function") {
+    try {
+      const res = await notificationRepo.createMany({
+        data: items.map((item) => ({
+          userId: item.userId,
+          subjectId: item.subjectId ?? null,
+          type: item.type,
+          title: item.title,
+          body: item.body,
+          linkUrl: item.linkUrl ?? null,
+        })),
+      });
+      createdCount = res?.count ?? items.length;
+    } catch (err) {
+      if (process.env.NODE_ENV !== "test") {
+        console.warn("Failed to persist notifications:", err);
+      }
+    }
+  }
+
+  if (!ensureVapidConfigured() || typeof sendNotification !== "function") {
     return { createdCount, pushAttempted: 0, prunedCount: 0 };
+  }
+
+  try {
+    after(() =>
+      deliverWebPushNotifications(items).catch((err: unknown) => {
+        if (process.env.NODE_ENV !== "test") {
+          console.warn("Web Push background dispatch error:", err);
+        }
+      })
+    );
+    return { createdCount, pushAttempted: 0, prunedCount: 0 };
+  } catch {
+    // Outside a Next.js request scope (e.g., unit tests or scripts), deliver inline.
+    const pushResult = await deliverWebPushNotifications(items);
+    return { createdCount, ...pushResult };
   }
 }

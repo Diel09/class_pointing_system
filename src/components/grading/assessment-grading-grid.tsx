@@ -462,35 +462,95 @@ export function AssessmentGradingGrid({
 
       setSavingScores(true);
       try {
-        const payloadGroupScores = groupRows.map((g) => {
+        const memberByEnrollment = new Map(
+          memberCandidates.map((m) => [m.enrollmentId, m])
+        );
+        const ungroupedIdSet = new Set(
+          ungroupedRows.map((u) => u.enrollmentId)
+        );
+
+        const changedGroupIds = new Set<string>();
+        for (const g of groupRows) {
           const draft = groupDrafts[g.groupId] ?? {
             status: g.status,
             rawScore: g.rawScore !== null ? String(g.rawScore) : "",
             remarks: g.remarks ?? "",
           };
-          const parsedRaw =
-            draft.status === "GRADED"
-              ? Number.parseFloat(draft.rawScore)
-              : null;
-          return {
-            groupId: g.groupId,
-            status: draft.status,
-            rawScore:
-              draft.status === "GRADED" && Number.isFinite(parsedRaw)
-                ? parsedRaw
-                : null,
-            remarks: draft.remarks.trim() || null,
-          };
-        });
+          const serverRaw = g.rawScore !== null ? String(g.rawScore) : "";
+          const serverRemarks = g.remarks ?? "";
+          const groupDirty =
+            draft.status !== g.status ||
+            draft.rawScore !== serverRaw ||
+            draft.remarks !== serverRemarks;
+          const hasClearedOverride = g.members.some((m) => {
+            const mDraft = memberOverrideDrafts[m.enrollmentId];
+            return Boolean(m.isGroupOverride) && mDraft?.isGroupOverride === false;
+          });
+          if (groupDirty || hasClearedOverride) {
+            changedGroupIds.add(g.groupId);
+          }
+        }
+
+        const payloadGroupScores = groupRows
+          .filter((g) => changedGroupIds.has(g.groupId))
+          .map((g) => {
+            const draft = groupDrafts[g.groupId] ?? {
+              status: g.status,
+              rawScore: g.rawScore !== null ? String(g.rawScore) : "",
+              remarks: g.remarks ?? "",
+            };
+            const parsedRaw =
+              draft.status === "GRADED"
+                ? Number.parseFloat(draft.rawScore)
+                : null;
+            return {
+              groupId: g.groupId,
+              status: draft.status,
+              rawScore:
+                draft.status === "GRADED" && Number.isFinite(parsedRaw)
+                  ? parsedRaw
+                  : null,
+              remarks: draft.remarks.trim() || null,
+            };
+          });
+
+        const groupIdByMember = new Map<string, string>();
+        for (const g of groupRows) {
+          for (const m of g.members) {
+            groupIdByMember.set(m.enrollmentId, g.groupId);
+          }
+        }
 
         const payloadMemberScores = memberCandidates
           .map((m) => {
-            const isUngrouped = ungroupedRows.some(
-              (u) => u.enrollmentId === m.enrollmentId
-            );
+            const isUngrouped = ungroupedIdSet.has(m.enrollmentId);
             const draft = memberOverrideDrafts[m.enrollmentId];
             if (!draft) return null;
             if (!draft.isGroupOverride && !isUngrouped) return null;
+
+            const serverRow = memberByEnrollment.get(m.enrollmentId);
+            const serverRaw =
+              serverRow && serverRow.rawScore !== null
+                ? String(serverRow.rawScore)
+                : "";
+            const serverRemarks = serverRow?.remarks ?? "";
+            const parentGroupId = groupIdByMember.get(m.enrollmentId);
+            const parentGroupIncluded =
+              parentGroupId !== undefined && changedGroupIds.has(parentGroupId);
+
+            const memberDirty = isUngrouped
+              ? draft.status !== m.status ||
+                draft.rawScore !== serverRaw ||
+                draft.remarks !== serverRemarks
+              : !Boolean(m.isGroupOverride) ||
+                draft.status !== m.status ||
+                draft.rawScore !== serverRaw ||
+                draft.remarks !== serverRemarks;
+
+            if (!memberDirty && !parentGroupIncluded) {
+              return null;
+            }
+
             const parsedRaw =
               draft.status === "GRADED"
                 ? Number.parseFloat(draft.rawScore)
@@ -508,6 +568,14 @@ export function AssessmentGradingGrid({
           })
           .filter((x): x is NonNullable<typeof x> => x !== null);
 
+        if (
+          payloadGroupScores.length === 0 &&
+          payloadMemberScores.length === 0
+        ) {
+          setScoreMessage("All scores are already up to date.");
+          return;
+        }
+
         const res = await fetch(`/api/assessments/${assessmentId}/scores`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -516,13 +584,15 @@ export function AssessmentGradingGrid({
             memberScores: payloadMemberScores,
           }),
         });
-        const data = (await res.json()) as {
+        const data = (await res.json().catch(() => ({}))) as {
           error?: string;
           updatedGroupsCount?: number;
           updatedCount?: number;
         };
         if (!res.ok) {
-          setScoreError(data.error ?? "Failed to save group scores.");
+          setScoreError(
+            data.error ?? `Failed to save group scores (HTTP ${res.status}).`
+          );
           return;
         }
 
@@ -571,15 +641,21 @@ export function AssessmentGradingGrid({
       }
     }
 
-    setSavingScores(true);
-
-    try {
-      const payloadScores = scoresData.rows.map((row) => {
+    const payloadScores = scoresData.rows
+      .map((row) => {
         const draft = drafts[row.enrollmentId] ?? {
           status: row.status,
           rawScore: row.rawScore !== null ? String(row.rawScore) : "",
           remarks: row.remarks ?? "",
         };
+        const serverRaw = row.rawScore !== null ? String(row.rawScore) : "";
+        const serverRemarks = row.remarks ?? "";
+        const isDirty =
+          draft.status !== row.status ||
+          draft.rawScore !== serverRaw ||
+          draft.remarks !== serverRemarks;
+        if (!isDirty) return null;
+
         const parsedRaw =
           draft.status === "GRADED"
             ? Number.parseFloat(draft.rawScore)
@@ -593,20 +669,38 @@ export function AssessmentGradingGrid({
               : null,
           remarks: draft.remarks.trim() || null,
         };
-      });
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
 
-      const res = await fetch(`/api/assessments/${assessmentId}/scores`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scores: payloadScores }),
-      });
-      const data = (await res.json()) as {
-        error?: string;
-        updatedCount?: number;
-      };
-      if (!res.ok) {
-        setScoreError(data.error ?? "Failed to save scores.");
-        return;
+    if (payloadScores.length === 0) {
+      setScoreMessage("All scores are already up to date.");
+      return;
+    }
+
+    setSavingScores(true);
+
+    try {
+      const batchSize = 250;
+      let totalUpdated = 0;
+
+      for (let i = 0; i < payloadScores.length; i += batchSize) {
+        const batch = payloadScores.slice(i, i + batchSize);
+        const res = await fetch(`/api/assessments/${assessmentId}/scores`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scores: batch }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          updatedCount?: number;
+        };
+        if (!res.ok) {
+          setScoreError(
+            data.error ?? `Failed to save scores (HTTP ${res.status}).`
+          );
+          return;
+        }
+        totalUpdated += data.updatedCount ?? batch.length;
       }
 
       await Promise.all([
@@ -620,7 +714,7 @@ export function AssessmentGradingGrid({
           queryKey: ["subject-standing", subjectId],
         }),
       ]);
-      setScoreMessage(`Saved ${data.updatedCount ?? 0} student score(s).`);
+      setScoreMessage(`Saved ${totalUpdated} student score(s).`);
     } catch {
       setScoreError("Network error while saving scores.");
     } finally {

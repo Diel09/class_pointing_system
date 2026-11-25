@@ -659,6 +659,98 @@ describe("Phase 5 Assessments, RBAC, Visibility & Score Boost Integration", () =
       code: "ERR_SCORE_ALREADY_MAX",
     });
   });
+
+  it("bulk-upserts large individual score batches via $executeRaw, deduplicates enrollmentIds, and returns structured 500 on DB failure", async () => {
+    getCurrentUserMock.mockResolvedValue(teacherSession("teacher-1"));
+    assessmentFindUniqueMock.mockResolvedValue({
+      id: ASSESSMENT_ID,
+      subjectId: SUBJECT_ID,
+      maxScore: 50,
+      subject: buildSubject(),
+      category: { id: CAT_QUIZ_ID, name: "Quizzes", termKey: "DEFAULT" },
+    });
+
+    const enrollIds = Array.from({ length: 220 }, (_, i) => {
+      const suffix = String(i + 1).padStart(4, "0");
+      return `44444444-4444-4444-8444-44444444${suffix}`;
+    });
+    subjectEnrollmentFindManyMock.mockResolvedValue(
+      enrollIds.map((id, i) => ({ id, studentId: `student-${i + 1}` }))
+    );
+
+    const executeRawMock = vi.fn().mockResolvedValue(200);
+    const prevExecuteRaw = (txClient as { $executeRaw?: unknown }).$executeRaw;
+    (txClient as { $executeRaw?: unknown }).$executeRaw = executeRawMock;
+
+    try {
+      const { PUT: putScores } = await import(
+        "@/app/api/assessments/[id]/scores/route"
+      );
+
+      // 220 unique enrollments + 1 duplicate -> deduped to 220 -> 2 chunks (200 + 20)
+      const scoresPayload = [
+        ...enrollIds.map((enrollmentId) => ({
+          enrollmentId,
+          status: "GRADED" as const,
+          rawScore: 45,
+          remarks: null,
+        })),
+        {
+          enrollmentId: enrollIds[0]!,
+          status: "GRADED" as const,
+          rawScore: 48,
+          remarks: "Updated",
+        },
+      ];
+
+      const res = await putScores(
+        new Request(`http://localhost/api/assessments/${ASSESSMENT_ID}/scores`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scores: scoresPayload }),
+        }),
+        { params: Promise.resolve({ id: ASSESSMENT_ID }) }
+      );
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, updatedCount: 220 });
+      expect(executeRawMock).toHaveBeenCalledTimes(2);
+      expect(assessmentScoreUpsertMock).not.toHaveBeenCalled();
+
+      // DB error inside bulk upsert returns structured 500 JSON
+      subjectEnrollmentFindManyMock.mockResolvedValueOnce([
+        { id: enrollIds[0]!, studentId: "student-1" },
+      ]);
+      executeRawMock.mockRejectedValueOnce(new Error("P2028 simulated error"));
+      const errRes = await putScores(
+        new Request(`http://localhost/api/assessments/${ASSESSMENT_ID}/scores`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scores: [
+              {
+                enrollmentId: enrollIds[0]!,
+                status: "GRADED",
+                rawScore: 40,
+                remarks: null,
+              },
+            ],
+          }),
+        }),
+        { params: Promise.resolve({ id: ASSESSMENT_ID }) }
+      );
+      expect(errRes.status).toBe(500);
+      expect(await errRes.json()).toMatchObject({
+        code: "ERR_INTERNAL",
+      });
+    } finally {
+      if (prevExecuteRaw === undefined) {
+        delete (txClient as { $executeRaw?: unknown }).$executeRaw;
+      } else {
+        (txClient as { $executeRaw?: unknown }).$executeRaw = prevExecuteRaw;
+      }
+    }
+  });
 });
 
 async function getScaleJson(res: Response) {

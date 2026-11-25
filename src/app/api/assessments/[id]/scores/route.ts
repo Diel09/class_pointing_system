@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getClientIp, recordAuditLog } from "@/lib/audit";
@@ -8,6 +10,182 @@ import { dispatchNotifications } from "@/lib/notifications/dispatch";
 import { upsertAssessmentScoresSchema } from "@/lib/validations/grading";
 
 const uuidSchema = z.string().uuid();
+const BULK_UPSERT_CHUNK_SIZE = 200;
+
+type ScoreStatusValue = "PENDING" | "GRADED" | "MISSING" | "EXCUSED";
+
+interface GroupScoreUpsertItem {
+  groupId: string;
+  status: ScoreStatusValue;
+  rawScore: number | null;
+  remarks: string | null;
+}
+
+interface AssessmentScoreUpsertItem {
+  enrollmentId: string;
+  status: ScoreStatusValue;
+  rawScore: number | null;
+  remarks: string | null;
+  isGroupOverride?: boolean;
+}
+
+/**
+ * Deduplicates items by key, keeping the last entry so PostgreSQL ON CONFLICT
+ * never fails with SQLSTATE 21000 on duplicate keys within one INSERT statement.
+ */
+function dedupeLastByKey<T>(items: T[], getKey: (item: T) => string): T[] {
+  const map = new Map<string, T>();
+  for (const item of items) {
+    map.set(getKey(item), item);
+  }
+  return Array.from(map.values());
+}
+
+async function bulkUpsertGroupScores(
+  tx: Prisma.TransactionClient,
+  assessmentId: string,
+  teacherId: string,
+  entries: GroupScoreUpsertItem[]
+): Promise<void> {
+  const uniqueEntries = dedupeLastByKey(entries, (e) => e.groupId);
+  if (uniqueEntries.length === 0) return;
+
+  if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === "function") {
+    for (let i = 0; i < uniqueEntries.length; i += BULK_UPSERT_CHUNK_SIZE) {
+      const chunk = uniqueEntries.slice(i, i + BULK_UPSERT_CHUNK_SIZE);
+      const values = chunk.map(
+        (entry) =>
+          Prisma.sql`(${randomUUID()}::uuid, ${assessmentId}::uuid, ${entry.groupId}::uuid, ${entry.status}::"AssessmentScoreStatus", ${entry.rawScore}::numeric(8,2), ${entry.remarks}, ${teacherId}::uuid, NOW())`
+      );
+      await tx.$executeRaw`
+        INSERT INTO "GroupAssessmentScore" (
+          "id",
+          "assessmentId",
+          "groupId",
+          "status",
+          "rawScore",
+          "remarks",
+          "updatedByTeacherId",
+          "updatedAt"
+        )
+        VALUES ${Prisma.join(values)}
+        ON CONFLICT ("assessmentId", "groupId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "rawScore" = EXCLUDED."rawScore",
+          "remarks" = EXCLUDED."remarks",
+          "updatedByTeacherId" = EXCLUDED."updatedByTeacherId",
+          "updatedAt" = NOW()
+      `;
+    }
+    return;
+  }
+
+  for (const entry of uniqueEntries) {
+    await tx.groupAssessmentScore.upsert({
+      where: {
+        assessmentId_groupId: {
+          assessmentId,
+          groupId: entry.groupId,
+        },
+      },
+      update: {
+        status: entry.status,
+        rawScore: entry.rawScore,
+        remarks: entry.remarks,
+        updatedByTeacherId: teacherId,
+      },
+      create: {
+        assessmentId,
+        groupId: entry.groupId,
+        status: entry.status,
+        rawScore: entry.rawScore,
+        remarks: entry.remarks,
+        updatedByTeacherId: teacherId,
+      },
+    });
+  }
+}
+
+async function bulkUpsertAssessmentScores(
+  tx: Prisma.TransactionClient,
+  assessmentId: string,
+  teacherId: string,
+  entries: AssessmentScoreUpsertItem[],
+  options: { updateGroupOverride: boolean }
+): Promise<void> {
+  const uniqueEntries = dedupeLastByKey(entries, (e) => e.enrollmentId);
+  if (uniqueEntries.length === 0) return;
+
+  if (typeof (tx as { $executeRaw?: unknown }).$executeRaw === "function") {
+    for (let i = 0; i < uniqueEntries.length; i += BULK_UPSERT_CHUNK_SIZE) {
+      const chunk = uniqueEntries.slice(i, i + BULK_UPSERT_CHUNK_SIZE);
+      const values = chunk.map(
+        (entry) =>
+          Prisma.sql`(${randomUUID()}::uuid, ${assessmentId}::uuid, ${entry.enrollmentId}::uuid, ${entry.status}::"AssessmentScoreStatus", ${entry.rawScore}::numeric(8,2), 0::numeric(8,2), false, ${Boolean(entry.isGroupOverride)}, ${entry.remarks}, ${teacherId}::uuid, NOW())`
+      );
+      const groupOverrideSet = options.updateGroupOverride
+        ? Prisma.sql`"isGroupOverride" = EXCLUDED."isGroupOverride",`
+        : Prisma.empty;
+      await tx.$executeRaw`
+        INSERT INTO "AssessmentScore" (
+          "id",
+          "assessmentId",
+          "enrollmentId",
+          "status",
+          "rawScore",
+          "bonusPoints",
+          "allowExtraCredit",
+          "isGroupOverride",
+          "remarks",
+          "updatedByTeacherId",
+          "updatedAt"
+        )
+        VALUES ${Prisma.join(values)}
+        ON CONFLICT ("assessmentId", "enrollmentId") DO UPDATE SET
+          "status" = EXCLUDED."status",
+          "rawScore" = EXCLUDED."rawScore",
+          "remarks" = EXCLUDED."remarks",
+          ${groupOverrideSet}
+          "updatedByTeacherId" = EXCLUDED."updatedByTeacherId",
+          "updatedAt" = NOW()
+      `;
+    }
+    return;
+  }
+
+  for (const entry of uniqueEntries) {
+    await tx.assessmentScore.upsert({
+      where: {
+        assessmentId_enrollmentId: {
+          assessmentId,
+          enrollmentId: entry.enrollmentId,
+        },
+      },
+      update: {
+        status: entry.status,
+        rawScore: entry.rawScore,
+        remarks: entry.remarks,
+        ...(options.updateGroupOverride
+          ? { isGroupOverride: Boolean(entry.isGroupOverride) }
+          : {}),
+        updatedByTeacherId: teacherId,
+      },
+      create: {
+        assessmentId,
+        enrollmentId: entry.enrollmentId,
+        status: entry.status,
+        rawScore: entry.rawScore,
+        bonusPoints: 0,
+        allowExtraCredit: false,
+        ...(options.updateGroupOverride
+          ? { isGroupOverride: Boolean(entry.isGroupOverride) }
+          : {}),
+        remarks: entry.remarks,
+        updatedByTeacherId: teacherId,
+      },
+    });
+  }
+}
 
 async function requireTeacherAssessmentOwner(assessmentId: string) {
   const roleResult = await requireRole(["TEACHER"]);
@@ -305,122 +483,316 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await context.params;
-  const owner = await requireTeacherAssessmentOwner(id);
-  if (!owner.ok) {
-    return owner.response;
-  }
-
-  if (owner.data.subject.isArchived) {
-    return jsonError(
-      "Cannot modify scores on an archived subject.",
-      400,
-      "ERR_SUBJECT_ARCHIVED"
-    );
-  }
-
-  let body: unknown;
   try {
-    body = await request.json();
-  } catch {
-    return jsonError("Invalid JSON request body.", 400, "ERR_INVALID_JSON");
-  }
-
-  const parsed = upsertAssessmentScoresSchema.safeParse(body);
-  if (!parsed.success) {
-    return jsonError(
-      parsed.error.issues[0]?.message ?? "Invalid scores payload.",
-      400,
-      "ERR_VALIDATION"
-    );
-  }
-
-  const { assessment, user } = owner.data;
-  const maxScore = Number(assessment.maxScore);
-  const ipAddress = getClientIp(request);
-
-  if (
-    (assessment as { isGroupMode?: boolean }).isGroupMode &&
-    (parsed.data.groupScores || parsed.data.memberScores)
-  ) {
-    const groupScores = parsed.data.groupScores ?? [];
-    const memberScores = parsed.data.memberScores ?? [];
-
-    for (const item of groupScores) {
-      if (
-        item.status === "GRADED" &&
-        item.rawScore !== null &&
-        item.rawScore !== undefined &&
-        item.rawScore > maxScore
-      ) {
-        return jsonError(
-          `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
-          400,
-          "ERR_SCORE_EXCEEDS_MAX"
-        );
-      }
+    const { id } = await context.params;
+    const owner = await requireTeacherAssessmentOwner(id);
+    if (!owner.ok) {
+      return owner.response;
     }
 
-    for (const item of memberScores) {
-      if (
-        item.isGroupOverride &&
-        item.status === "GRADED" &&
-        item.rawScore !== null &&
-        item.rawScore !== undefined &&
-        item.rawScore > maxScore
-      ) {
-        return jsonError(
-          `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
-          400,
-          "ERR_SCORE_EXCEEDS_MAX"
-        );
-      }
-    }
-
-    const groupSetId = (assessment as { groupSetId?: string | null }).groupSetId;
-    const uniqueGroupIds = Array.from(new Set(groupScores.map((g) => g.groupId)));
-    const groups =
-      uniqueGroupIds.length > 0 && groupSetId
-        ? await db.studentGroup.findMany({
-            where: {
-              groupSetId,
-              id: { in: uniqueGroupIds },
-            },
-            include: {
-              memberships: {
-                select: { enrollmentId: true },
-              },
-            },
-          })
-        : [];
-
-    if (groups.length !== uniqueGroupIds.length) {
+    if (owner.data.subject.isArchived) {
       return jsonError(
-        "One or more groups do not belong to this assessment's group set.",
+        "Cannot modify scores on an archived subject.",
         400,
-        "ERR_GROUP_NOT_FOUND"
+        "ERR_SUBJECT_ARCHIVED"
       );
     }
 
-    const uniqueMemberEnrollmentIds = Array.from(
-      new Set([
-        ...groups.flatMap((g) => g.memberships.map((m) => m.enrollmentId)),
-        ...memberScores.map((m) => m.enrollmentId),
-      ])
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonError("Invalid JSON request body.", 400, "ERR_INVALID_JSON");
+    }
+
+    const parsed = upsertAssessmentScoresSchema.safeParse(body);
+    if (!parsed.success) {
+      return jsonError(
+        parsed.error.issues[0]?.message ?? "Invalid scores payload.",
+        400,
+        "ERR_VALIDATION"
+      );
+    }
+
+    const { assessment, user } = owner.data;
+    const maxScore = Number(assessment.maxScore);
+    const ipAddress = getClientIp(request);
+
+    if (
+      (assessment as { isGroupMode?: boolean }).isGroupMode &&
+      (parsed.data.groupScores || parsed.data.memberScores)
+    ) {
+      const groupScores = dedupeLastByKey(
+        parsed.data.groupScores ?? [],
+        (g) => g.groupId
+      );
+      const memberScores = dedupeLastByKey(
+        parsed.data.memberScores ?? [],
+        (m) => m.enrollmentId
+      );
+
+      for (const item of groupScores) {
+        if (
+          item.status === "GRADED" &&
+          item.rawScore !== null &&
+          item.rawScore !== undefined &&
+          item.rawScore > maxScore
+        ) {
+          return jsonError(
+            `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
+            400,
+            "ERR_SCORE_EXCEEDS_MAX"
+          );
+        }
+      }
+
+      for (const item of memberScores) {
+        if (
+          item.isGroupOverride &&
+          item.status === "GRADED" &&
+          item.rawScore !== null &&
+          item.rawScore !== undefined &&
+          item.rawScore > maxScore
+        ) {
+          return jsonError(
+            `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
+            400,
+            "ERR_SCORE_EXCEEDS_MAX"
+          );
+        }
+      }
+
+      const groupSetId = (assessment as { groupSetId?: string | null })
+        .groupSetId;
+      const uniqueGroupIds = groupScores.map((g) => g.groupId);
+      const groups =
+        uniqueGroupIds.length > 0 && groupSetId
+          ? await db.studentGroup.findMany({
+              where: {
+                groupSetId,
+                id: { in: uniqueGroupIds },
+              },
+              include: {
+                memberships: {
+                  select: { enrollmentId: true },
+                },
+              },
+            })
+          : [];
+
+      if (groups.length !== uniqueGroupIds.length) {
+        return jsonError(
+          "One or more groups do not belong to this assessment's group set.",
+          400,
+          "ERR_GROUP_NOT_FOUND"
+        );
+      }
+
+      const uniqueMemberEnrollmentIds = Array.from(
+        new Set([
+          ...groups.flatMap((g) => g.memberships.map((m) => m.enrollmentId)),
+          ...memberScores.map((m) => m.enrollmentId),
+        ])
+      );
+
+      const validEnrollments =
+        uniqueMemberEnrollmentIds.length > 0
+          ? await db.subjectEnrollment.findMany({
+              where: {
+                subjectId: assessment.subjectId,
+                id: { in: uniqueMemberEnrollmentIds },
+              },
+              select: { id: true, studentId: true },
+            })
+          : [];
+
+      if (validEnrollments.length !== uniqueMemberEnrollmentIds.length) {
+        return jsonError(
+          "One or more students are not enrolled in this subject.",
+          400,
+          "ERR_NOT_ENROLLED"
+        );
+      }
+
+      const membersByGroup = new Map(
+        groups.map((g) => [g.id, g.memberships.map((m) => m.enrollmentId)])
+      );
+      const overrideByEnrollment = new Map(
+        memberScores.map((m) => [m.enrollmentId, m])
+      );
+
+      const finalMemberUpdates: AssessmentScoreUpsertItem[] = [];
+      const handledEnrollments = new Set<string>();
+
+      for (const gEntry of groupScores) {
+        const memberIds = membersByGroup.get(gEntry.groupId) ?? [];
+        for (const enrollmentId of memberIds) {
+          handledEnrollments.add(enrollmentId);
+          const override = overrideByEnrollment.get(enrollmentId);
+          if (override && override.isGroupOverride) {
+            finalMemberUpdates.push({
+              enrollmentId,
+              status: override.status,
+              rawScore:
+                override.status === "GRADED" ? (override.rawScore ?? 0) : null,
+              remarks: override.remarks?.trim() || null,
+              isGroupOverride: true,
+            });
+          } else {
+            finalMemberUpdates.push({
+              enrollmentId,
+              status: gEntry.status,
+              rawScore:
+                gEntry.status === "GRADED" ? (gEntry.rawScore ?? 0) : null,
+              remarks: gEntry.remarks?.trim() || null,
+              isGroupOverride: false,
+            });
+          }
+        }
+      }
+
+      for (const mEntry of memberScores) {
+        if (handledEnrollments.has(mEntry.enrollmentId)) continue;
+        handledEnrollments.add(mEntry.enrollmentId);
+        finalMemberUpdates.push({
+          enrollmentId: mEntry.enrollmentId,
+          status: mEntry.status,
+          rawScore: mEntry.status === "GRADED" ? (mEntry.rawScore ?? 0) : null,
+          remarks: mEntry.remarks?.trim() || null,
+          isGroupOverride: Boolean(mEntry.isGroupOverride),
+        });
+      }
+
+      const normalizedGroupUpdates: GroupScoreUpsertItem[] = groupScores.map(
+        (gEntry) => ({
+          groupId: gEntry.groupId,
+          status: gEntry.status,
+          rawScore: gEntry.status === "GRADED" ? (gEntry.rawScore ?? 0) : null,
+          remarks: gEntry.remarks?.trim() || null,
+        })
+      );
+
+      try {
+        await db.$transaction(
+          async (tx) => {
+            await bulkUpsertGroupScores(
+              tx,
+              id,
+              user.id,
+              normalizedGroupUpdates
+            );
+            await bulkUpsertAssessmentScores(
+              tx,
+              id,
+              user.id,
+              finalMemberUpdates,
+              { updateGroupOverride: true }
+            );
+
+            await recordAuditLog(
+              {
+                actorUserId: user.id,
+                subjectId: assessment.subjectId,
+                action: "ASSESSMENT_SCORES_UPDATED",
+                targetType: "Assessment",
+                targetId: id,
+                afterState: {
+                  isGroupMode: true,
+                  updatedGroupsCount: normalizedGroupUpdates.length,
+                  updatedCount: finalMemberUpdates.length,
+                },
+                ipAddress,
+              },
+              tx
+            );
+          },
+          { timeout: 15000 }
+        );
+      } catch (error) {
+        console.error("Update group assessment scores error:", error);
+        return jsonError(
+          "Failed to save group assessment scores.",
+          500,
+          "ERR_INTERNAL"
+        );
+      }
+
+      const studentIdByEnrollment = new Map(
+        validEnrollments
+          .filter((e): e is { id: string; studentId: string } =>
+            Boolean(e.studentId)
+          )
+          .map((e) => [e.id, e.studentId])
+      );
+
+      const notificationItems = finalMemberUpdates
+        .filter((entry) => entry.status !== "PENDING")
+        .map((entry) => {
+          const studentUserId = studentIdByEnrollment.get(entry.enrollmentId);
+          if (!studentUserId) return null;
+          const summaryText =
+            entry.status === "GRADED"
+              ? `Score recorded: ${entry.rawScore ?? 0}/${maxScore}`
+              : `Status updated: ${entry.status}`;
+          return {
+            userId: studentUserId,
+            subjectId: assessment.subjectId,
+            type: "SCORE_UPDATED" as const,
+            title: `Score Updated (${owner.data.subject.code})`,
+            body: `${assessment.title}: ${summaryText}.`,
+            linkUrl: `/subjects/${assessment.subjectId}`,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (notificationItems.length > 0) {
+        await dispatchNotifications(notificationItems);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        updatedGroupsCount: normalizedGroupUpdates.length,
+        updatedCount: finalMemberUpdates.length,
+      });
+    }
+
+    const scoreEntries = dedupeLastByKey(
+      parsed.data.scores ?? [],
+      (s) => s.enrollmentId
     );
+    if (scoreEntries.length === 0) {
+      return jsonError(
+        "Provide at least one score update.",
+        400,
+        "ERR_VALIDATION"
+      );
+    }
 
-    const validEnrollments =
-      uniqueMemberEnrollmentIds.length > 0
-        ? await db.subjectEnrollment.findMany({
-            where: {
-              subjectId: assessment.subjectId,
-              id: { in: uniqueMemberEnrollmentIds },
-            },
-            select: { id: true, studentId: true },
-          })
-        : [];
+    for (const item of scoreEntries) {
+      if (
+        item.status === "GRADED" &&
+        item.rawScore !== null &&
+        item.rawScore !== undefined &&
+        item.rawScore > maxScore
+      ) {
+        return jsonError(
+          `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
+          400,
+          "ERR_SCORE_EXCEEDS_MAX"
+        );
+      }
+    }
 
-    if (validEnrollments.length !== uniqueMemberEnrollmentIds.length) {
+    const uniqueEnrollmentIds = scoreEntries.map((s) => s.enrollmentId);
+    const validEnrollments = await db.subjectEnrollment.findMany({
+      where: {
+        subjectId: assessment.subjectId,
+        id: { in: uniqueEnrollmentIds },
+      },
+      select: { id: true, studentId: true },
+    });
+
+    if (validEnrollments.length !== uniqueEnrollmentIds.length) {
       return jsonError(
         "One or more students are not enrolled in this subject.",
         400,
@@ -428,121 +800,24 @@ export async function PUT(
       );
     }
 
-    const membersByGroup = new Map(
-      groups.map((g) => [g.id, g.memberships.map((m) => m.enrollmentId)])
-    );
-    const overrideByEnrollment = new Map(
-      memberScores.map((m) => [m.enrollmentId, m])
-    );
-
-    const finalMemberUpdates: {
-      enrollmentId: string;
-      status: "PENDING" | "GRADED" | "MISSING" | "EXCUSED";
-      rawScore: number | null;
-      remarks: string | null;
-      isGroupOverride: boolean;
-    }[] = [];
-    const handledEnrollments = new Set<string>();
-
-    for (const gEntry of groupScores) {
-      const memberIds = membersByGroup.get(gEntry.groupId) ?? [];
-      for (const enrollmentId of memberIds) {
-        handledEnrollments.add(enrollmentId);
-        const override = overrideByEnrollment.get(enrollmentId);
-        if (override && override.isGroupOverride) {
-          finalMemberUpdates.push({
-            enrollmentId,
-            status: override.status,
-            rawScore:
-              override.status === "GRADED" ? (override.rawScore ?? 0) : null,
-            remarks: override.remarks?.trim() || null,
-            isGroupOverride: true,
-          });
-        } else {
-          finalMemberUpdates.push({
-            enrollmentId,
-            status: gEntry.status,
-            rawScore:
-              gEntry.status === "GRADED" ? (gEntry.rawScore ?? 0) : null,
-            remarks: gEntry.remarks?.trim() || null,
-            isGroupOverride: false,
-          });
-        }
-      }
-    }
-
-    for (const mEntry of memberScores) {
-      if (handledEnrollments.has(mEntry.enrollmentId)) continue;
-      handledEnrollments.add(mEntry.enrollmentId);
-      finalMemberUpdates.push({
-        enrollmentId: mEntry.enrollmentId,
-        status: mEntry.status,
-        rawScore: mEntry.status === "GRADED" ? (mEntry.rawScore ?? 0) : null,
-        remarks: mEntry.remarks?.trim() || null,
-        isGroupOverride: Boolean(mEntry.isGroupOverride),
-      });
-    }
+    const normalizedScoreUpdates: AssessmentScoreUpsertItem[] =
+      scoreEntries.map((entry) => ({
+        enrollmentId: entry.enrollmentId,
+        status: entry.status,
+        rawScore: entry.status === "GRADED" ? (entry.rawScore ?? 0) : null,
+        remarks: entry.remarks?.trim() || null,
+      }));
 
     try {
       await db.$transaction(
         async (tx) => {
-          for (const gEntry of groupScores) {
-            const normalizedRawScore =
-              gEntry.status === "GRADED" ? (gEntry.rawScore ?? 0) : null;
-            const remarks = gEntry.remarks?.trim() || null;
-
-            await tx.groupAssessmentScore.upsert({
-              where: {
-                assessmentId_groupId: {
-                  assessmentId: id,
-                  groupId: gEntry.groupId,
-                },
-              },
-              update: {
-                status: gEntry.status,
-                rawScore: normalizedRawScore,
-                remarks,
-                updatedByTeacherId: user.id,
-              },
-              create: {
-                assessmentId: id,
-                groupId: gEntry.groupId,
-                status: gEntry.status,
-                rawScore: normalizedRawScore,
-                remarks,
-                updatedByTeacherId: user.id,
-              },
-            });
-          }
-
-          for (const entry of finalMemberUpdates) {
-            await tx.assessmentScore.upsert({
-              where: {
-                assessmentId_enrollmentId: {
-                  assessmentId: id,
-                  enrollmentId: entry.enrollmentId,
-                },
-              },
-              update: {
-                status: entry.status,
-                rawScore: entry.rawScore,
-                remarks: entry.remarks,
-                isGroupOverride: entry.isGroupOverride,
-                updatedByTeacherId: user.id,
-              },
-              create: {
-                assessmentId: id,
-                enrollmentId: entry.enrollmentId,
-                status: entry.status,
-                rawScore: entry.rawScore,
-                bonusPoints: 0,
-                allowExtraCredit: false,
-                isGroupOverride: entry.isGroupOverride,
-                remarks: entry.remarks,
-                updatedByTeacherId: user.id,
-              },
-            });
-          }
+          await bulkUpsertAssessmentScores(
+            tx,
+            id,
+            user.id,
+            normalizedScoreUpdates,
+            { updateGroupOverride: false }
+          );
 
           await recordAuditLog(
             {
@@ -552,9 +827,7 @@ export async function PUT(
               targetType: "Assessment",
               targetId: id,
               afterState: {
-                isGroupMode: true,
-                updatedGroupsCount: groupScores.length,
-                updatedCount: finalMemberUpdates.length,
+                updatedCount: normalizedScoreUpdates.length,
               },
               ipAddress,
             },
@@ -564,9 +837,9 @@ export async function PUT(
         { timeout: 15000 }
       );
     } catch (error) {
-      console.error("Update group assessment scores error:", error);
+      console.error("Update assessment scores error:", error);
       return jsonError(
-        "Failed to save group assessment scores.",
+        "Failed to save assessment scores.",
         500,
         "ERR_INTERNAL"
       );
@@ -580,7 +853,7 @@ export async function PUT(
         .map((e) => [e.id, e.studentId])
     );
 
-    const notificationItems = finalMemberUpdates
+    const notificationItems = normalizedScoreUpdates
       .filter((entry) => entry.status !== "PENDING")
       .map((entry) => {
         const studentUserId = studentIdByEnrollment.get(entry.enrollmentId);
@@ -606,105 +879,8 @@ export async function PUT(
 
     return NextResponse.json({
       ok: true,
-      updatedGroupsCount: groupScores.length,
-      updatedCount: finalMemberUpdates.length,
+      updatedCount: normalizedScoreUpdates.length,
     });
-  }
-
-  const scoreEntries = parsed.data.scores ?? [];
-  if (scoreEntries.length === 0) {
-    return jsonError(
-      "Provide at least one score update.",
-      400,
-      "ERR_VALIDATION"
-    );
-  }
-
-  for (const item of scoreEntries) {
-    if (
-      item.status === "GRADED" &&
-      item.rawScore !== null &&
-      item.rawScore !== undefined &&
-      item.rawScore > maxScore
-    ) {
-      return jsonError(
-        `Raw score (${item.rawScore}) cannot exceed assessment max score (${maxScore}). Point boosts add bonus points separately.`,
-        400,
-        "ERR_SCORE_EXCEEDS_MAX"
-      );
-    }
-  }
-
-  const uniqueEnrollmentIds = Array.from(
-    new Set(scoreEntries.map((s) => s.enrollmentId))
-  );
-  const validEnrollments = await db.subjectEnrollment.findMany({
-    where: {
-      subjectId: assessment.subjectId,
-      id: { in: uniqueEnrollmentIds },
-    },
-    select: { id: true, studentId: true },
-  });
-
-  if (validEnrollments.length !== uniqueEnrollmentIds.length) {
-    return jsonError(
-      "One or more students are not enrolled in this subject.",
-      400,
-      "ERR_NOT_ENROLLED"
-    );
-  }
-
-  try {
-    await db.$transaction(
-      async (tx) => {
-        for (const entry of scoreEntries) {
-          const normalizedRawScore =
-            entry.status === "GRADED" ? (entry.rawScore ?? 0) : null;
-          const remarks = entry.remarks?.trim() || null;
-
-          await tx.assessmentScore.upsert({
-            where: {
-              assessmentId_enrollmentId: {
-                assessmentId: id,
-                enrollmentId: entry.enrollmentId,
-              },
-            },
-            update: {
-              status: entry.status,
-              rawScore: normalizedRawScore,
-              remarks,
-              updatedByTeacherId: user.id,
-            },
-            create: {
-              assessmentId: id,
-              enrollmentId: entry.enrollmentId,
-              status: entry.status,
-              rawScore: normalizedRawScore,
-              bonusPoints: 0,
-              allowExtraCredit: false,
-              remarks,
-              updatedByTeacherId: user.id,
-            },
-          });
-        }
-
-        await recordAuditLog(
-          {
-            actorUserId: user.id,
-            subjectId: assessment.subjectId,
-            action: "ASSESSMENT_SCORES_UPDATED",
-            targetType: "Assessment",
-            targetId: id,
-            afterState: {
-              updatedCount: scoreEntries.length,
-            },
-            ipAddress,
-          },
-          tx
-        );
-      },
-      { timeout: 15000 }
-    );
   } catch (error) {
     console.error("Update assessment scores error:", error);
     return jsonError(
@@ -713,39 +889,4 @@ export async function PUT(
       "ERR_INTERNAL"
     );
   }
-
-  const studentIdByEnrollment = new Map(
-    validEnrollments
-      .filter((e): e is { id: string; studentId: string } => Boolean(e.studentId))
-      .map((e) => [e.id, e.studentId])
-  );
-
-  const notificationItems = scoreEntries
-    .filter((entry) => entry.status !== "PENDING")
-    .map((entry) => {
-      const studentUserId = studentIdByEnrollment.get(entry.enrollmentId);
-      if (!studentUserId) return null;
-      const summaryText =
-        entry.status === "GRADED"
-          ? `Score recorded: ${entry.rawScore ?? 0}/${maxScore}`
-          : `Status updated: ${entry.status}`;
-      return {
-        userId: studentUserId,
-        subjectId: assessment.subjectId,
-        type: "SCORE_UPDATED" as const,
-        title: `Score Updated (${owner.data.subject.code})`,
-        body: `${assessment.title}: ${summaryText}.`,
-        linkUrl: `/subjects/${assessment.subjectId}`,
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
-
-  if (notificationItems.length > 0) {
-    await dispatchNotifications(notificationItems);
-  }
-
-  return NextResponse.json({
-    ok: true,
-    updatedCount: scoreEntries.length,
-  });
 }

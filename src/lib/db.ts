@@ -36,10 +36,9 @@ function createPrismaClient(): PrismaClient {
 }
 
 /**
- * Shared PrismaClient singleton to prevent connection exhaustion during HMR.
+ * Shared PrismaClient singleton to prevent connection exhaustion across HMR
+ * and reused serverless module evaluations.
  */
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
-}
+globalForPrisma.prisma = db;
